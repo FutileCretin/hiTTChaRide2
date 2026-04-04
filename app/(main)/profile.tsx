@@ -75,11 +75,6 @@ export default function ProfileScreen() {
         <Text style={styles.profileName}>{profile?.name}</Text>
         <Text style={styles.profileBadge}>Badge #{profile?.badgeNumber}</Text>
 
-        {profile?.isAdmin && (
-          <View style={[styles.stewardBadge, { backgroundColor: '#7B1FA2' }]}>
-            <Text style={styles.stewardBadgeText}>Admin</Text>
-          </View>
-        )}
         {profile?.isShopSteward && !profile?.isAdmin && (
           <View style={styles.stewardBadge}>
             <Text style={styles.stewardBadgeText}>Shop Steward</Text>
@@ -135,12 +130,12 @@ export default function ProfileScreen() {
         <InfoRow label="Device" value="This device (linked)" />
       </View>
 
-      {/* Steward / Admin tools */}
+      {/* Steward tools — label only shown for named stewards, not admin */}
       {(profile?.isShopSteward || profile?.isAdmin) && (
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>
-            {profile?.isAdmin ? 'Admin Tools' : 'Shop Steward Tools'}
-          </Text>
+          {profile?.isShopSteward && !profile?.isAdmin && (
+            <Text style={styles.sectionLabel}>Shop Steward Tools</Text>
+          )}
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => router.push('/(main)/approvals')}
