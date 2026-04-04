@@ -26,6 +26,7 @@ export interface UserProfile {
   status: AccountStatus;
   avatarConfig: AvatarConfig;
   isShopSteward: boolean;
+  isAdmin?: boolean;          // true only for badge 82821 — hidden super-admin
   stewardApprovedBy?: string;
   registeredAt: Timestamp;
   lastLoginAt?: Timestamp;

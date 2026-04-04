@@ -1,5 +1,4 @@
-// In-app Pending Approvals screen — visible to shop stewards only
-// Same logic as the admin web app but inside the mobile app
+// Pending Approvals + Appoint Shop Steward — visible to shop stewards and admin
 
 import { useEffect, useState } from 'react';
 import {
@@ -10,6 +9,8 @@ import {
   FlatList,
   ActivityIndicator,
   Alert,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
 import {
@@ -23,6 +24,12 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { Colors } from '../../constants/colors';
+import { useAuth } from '../../hooks/useAuth';
+import {
+  createAppointment,
+  getApprovedOperators,
+  ApprovedOperator,
+} from '../../services/stewardAppointment';
 
 interface PendingUser {
   badgeNumber: string;
@@ -32,10 +39,18 @@ interface PendingUser {
 }
 
 export default function ApprovalsScreen() {
-  const [pending, setPending] = useState<PendingUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState<string | null>(null);
+  const { profile } = useAuth();
+  const [pending, setPending]         = useState<PendingUser[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [processing, setProcessing]   = useState<string | null>(null);
 
+  // Appoint flow state
+  const [showAppoint, setShowAppoint]       = useState(false);
+  const [operators, setOperators]           = useState<ApprovedOperator[]>([]);
+  const [loadingOperators, setLoadingOperators] = useState(false);
+  const [appointing, setAppointing]         = useState<string | null>(null);
+
+  // Live pending approvals
   useEffect(() => {
     const q = query(collection(db, 'users'), where('status', '==', 'pending'));
     const unsub = onSnapshot(q, (snap) => {
@@ -48,10 +63,9 @@ export default function ApprovalsScreen() {
   }, []);
 
   const handleDecision = (user: PendingUser, approve: boolean) => {
-    const action = approve ? 'approve' : 'deny';
     Alert.alert(
       `${approve ? 'Approve' : 'Deny'} Operator`,
-      `Are you sure you want to ${action} ${user.name} (Badge #${user.badgeNumber})?`,
+      `Are you sure you want to ${approve ? 'approve' : 'deny'} ${user.name} (Badge #${user.badgeNumber})?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -70,27 +84,84 @@ export default function ApprovalsScreen() {
         status: approve ? 'approved' : 'denied',
         reviewedAt: Timestamp.now(),
       });
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Could not process this request. Please try again.');
     } finally {
       setProcessing(null);
     }
   };
 
-  const formatDate = (ts: Timestamp) => {
-    const d = ts.toDate();
-    return d.toLocaleDateString('en-CA', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  // Open the appoint modal — load eligible operators
+  const openAppointModal = async () => {
+    setShowAppoint(true);
+    setLoadingOperators(true);
+    try {
+      const list = await getApprovedOperators();
+      setOperators(list);
+    } catch {
+      Alert.alert('Error', 'Could not load operators.');
+    } finally {
+      setLoadingOperators(false);
+    }
   };
+
+  const confirmAppoint = (operator: ApprovedOperator) => {
+    const previousName  = profile?.isShopSteward ? profile.name : null;
+    const previousBadge = profile?.isShopSteward ? profile.badgeNumber : null;
+
+    const stepping = previousBadge
+      ? `\n\nNote: You (${previousName}) will step down as Shop Steward.`
+      : '';
+
+    Alert.alert(
+      'Appoint Shop Steward',
+      `Appoint ${operator.name} (Badge #${operator.badgeNumber}) as the new Shop Steward?${stepping}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Appoint',
+          onPress: () => doAppoint(operator, previousBadge, previousName),
+        },
+      ]
+    );
+  };
+
+  const doAppoint = async (
+    operator: ApprovedOperator,
+    previousBadge: string | null,
+    previousName: string | null
+  ) => {
+    if (!profile) return;
+    setAppointing(operator.badgeNumber);
+    try {
+      await createAppointment(
+        operator.badgeNumber,
+        operator.name,
+        profile.badgeNumber,
+        profile.name,
+        previousBadge,
+        previousName
+      );
+      setShowAppoint(false);
+      Alert.alert(
+        'Appointment Sent',
+        `${operator.name} will see a notification to accept or decline the role.`
+      );
+    } catch {
+      Alert.alert('Error', 'Could not send appointment. Please try again.');
+    } finally {
+      setAppointing(null);
+    }
+  };
+
+  const formatDate = (ts: Timestamp) =>
+    ts.toDate().toLocaleDateString('en-CA', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
 
   const renderItem = ({ item }: { item: PendingUser }) => (
     <View style={styles.row}>
-      {/* Badge + Name + Date */}
       <View style={styles.rowInfo}>
         <Text style={styles.rowBadge}>Badge #{item.badgeNumber}</Text>
         <Text style={styles.rowName}>{item.name}</Text>
@@ -101,21 +172,16 @@ export default function ApprovalsScreen() {
           </Text>
         )}
       </View>
-
-      {/* Approve / Deny buttons */}
       <View style={styles.rowActions}>
         <TouchableOpacity
           style={[styles.approveBtn, processing === item.badgeNumber && styles.btnDisabled]}
           onPress={() => handleDecision(item, true)}
           disabled={processing === item.badgeNumber}
         >
-          {processing === item.badgeNumber ? (
-            <ActivityIndicator color={Colors.white} size="small" />
-          ) : (
-            <Text style={styles.approveBtnText}>Approve</Text>
-          )}
+          {processing === item.badgeNumber
+            ? <ActivityIndicator color={Colors.white} size="small" />
+            : <Text style={styles.approveBtnText}>Approve</Text>}
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.denyBtn, processing === item.badgeNumber && styles.btnDisabled]}
           onPress={() => handleDecision(item, false)}
@@ -142,6 +208,18 @@ export default function ApprovalsScreen() {
         )}
       </View>
 
+      {/* Appoint Shop Steward button */}
+      <View style={styles.appointSection}>
+        <TouchableOpacity style={styles.appointBtn} onPress={openAppointModal}>
+          <Text style={styles.appointBtnIcon}>🎖</Text>
+          <View>
+            <Text style={styles.appointBtnTitle}>Appoint Shop Steward</Text>
+            <Text style={styles.appointBtnSub}>Select an approved operator to take the role</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Pending list */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={Colors.primary} size="large" />
@@ -162,153 +240,136 @@ export default function ApprovalsScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      {/* ── Appoint modal ── */}
+      <Modal visible={showAppoint} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Operator to Appoint</Text>
+              <TouchableOpacity onPress={() => setShowAppoint(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingOperators ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator color={Colors.primary} />
+                <Text style={styles.loadingText}>Loading operators...</Text>
+              </View>
+            ) : operators.length === 0 ? (
+              <Text style={styles.noOperatorsText}>
+                No eligible operators found. Operators must be approved before they can be appointed.
+              </Text>
+            ) : (
+              <ScrollView style={styles.operatorList} showsVerticalScrollIndicator={false}>
+                {operators.map((op) => (
+                  <TouchableOpacity
+                    key={op.badgeNumber}
+                    style={[styles.operatorRow, appointing === op.badgeNumber && styles.btnDisabled]}
+                    onPress={() => confirmAppoint(op)}
+                    disabled={appointing !== null}
+                  >
+                    <View>
+                      <Text style={styles.operatorName}>{op.name}</Text>
+                      <Text style={styles.operatorBadge}>Badge #{op.badgeNumber}</Text>
+                    </View>
+                    {appointing === op.badgeNumber
+                      ? <ActivityIndicator color={Colors.primary} size="small" />
+                      : <Text style={styles.operatorChevron}>›</Text>}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
+  container:  { flex: 1, backgroundColor: Colors.background },
   header: {
-    paddingTop: 60,
-    paddingHorizontal: 24,
-    paddingBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingTop: 60, paddingHorizontal: 24, paddingBottom: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   backBtn: {
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surface, paddingHorizontal: 14,
+    paddingVertical: 8, borderRadius: 16,
+    borderWidth: 1, borderColor: Colors.border,
   },
-  backBtnText: {
-    color: Colors.white,
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  title: {
-    flex: 1,
-    color: Colors.white,
-    fontSize: 20,
-    fontWeight: '800',
-  },
+  backBtnText:  { color: Colors.white, fontWeight: '600', fontSize: 13 },
+  title:        { flex: 1, color: Colors.white, fontSize: 20, fontWeight: '800' },
   countBadge: {
-    backgroundColor: Colors.primary,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: Colors.primary, width: 30, height: 30,
+    borderRadius: 15, alignItems: 'center', justifyContent: 'center',
   },
-  countText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 14,
+  countText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
+
+  // Appoint section
+  appointSection: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+  appointBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: Colors.surface, borderRadius: 16,
+    padding: 16, borderWidth: 1, borderColor: Colors.primary,
   },
-  list: {
-    padding: 20,
-    gap: 12,
-  },
+  appointBtnIcon:  { fontSize: 28 },
+  appointBtnTitle: { color: Colors.white, fontSize: 15, fontWeight: '700' },
+  appointBtnSub:   { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
+
+  list:  { padding: 20, gap: 12 },
   row: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 14,
+    backgroundColor: Colors.surface, borderRadius: 16,
+    padding: 18, borderWidth: 1, borderColor: Colors.border, gap: 14,
   },
-  rowInfo: {
-    gap: 3,
-  },
-  rowBadge: {
-    color: Colors.primary,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  rowName: {
-    color: Colors.white,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  rowDate: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  rowWarning: {
-    color: Colors.warning,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  rowActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
+  rowInfo:    { gap: 3 },
+  rowBadge:   { color: Colors.primary, fontSize: 13, fontWeight: '700' },
+  rowName:    { color: Colors.white, fontSize: 18, fontWeight: '700' },
+  rowDate:    { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
+  rowWarning: { color: Colors.warning ?? '#F59E0B', fontSize: 12, fontWeight: '600', marginTop: 4 },
+  rowActions: { flexDirection: 'row', gap: 10 },
   approveBtn: {
-    flex: 1,
-    backgroundColor: Colors.success,
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: 'center',
+    flex: 1, backgroundColor: Colors.success,
+    borderRadius: 12, paddingVertical: 13, alignItems: 'center',
   },
-  approveBtnText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 15,
-  },
+  approveBtnText: { color: Colors.white, fontWeight: '700', fontSize: 15 },
   denyBtn: {
-    flex: 1,
-    backgroundColor: Colors.grayDark,
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.danger,
+    flex: 1, backgroundColor: Colors.grayDark,
+    borderRadius: 12, paddingVertical: 13, alignItems: 'center',
+    borderWidth: 1, borderColor: Colors.danger,
   },
-  denyBtnText: {
-    color: Colors.danger,
-    fontWeight: '700',
-    fontSize: 15,
+  denyBtnText: { color: Colors.danger, fontWeight: '700', fontSize: 15 },
+  btnDisabled: { opacity: 0.5 },
+
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText:      { color: Colors.textSecondary, fontSize: 14 },
+  emptyContainer:   { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  emptyIcon:        { fontSize: 56, color: Colors.success },
+  emptyTitle:       { color: Colors.white, fontSize: 22, fontWeight: '700' },
+  emptyBody:        { color: Colors.textSecondary, fontSize: 14 },
+
+  // Appoint modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'flex-end',
   },
-  btnDisabled: {
-    opacity: 0.5,
+  modalCard: {
+    backgroundColor: Colors.surface, borderTopLeftRadius: 24,
+    borderTopRightRadius: 24, padding: 24, maxHeight: '75%',
   },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle:  { color: Colors.white, fontSize: 18, fontWeight: '800' },
+  modalClose:  { color: Colors.textSecondary, fontSize: 20, paddingHorizontal: 4 },
+  modalLoading: { alignItems: 'center', gap: 10, paddingVertical: 20 },
+  noOperatorsText: { color: Colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', padding: 16 },
+  operatorList: { flexGrow: 0 },
+  operatorRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  loadingText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  emptyIcon: {
-    fontSize: 56,
-    color: Colors.success,
-  },
-  emptyTitle: {
-    color: Colors.white,
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  emptyBody: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-  },
+  operatorName:    { color: Colors.white, fontSize: 16, fontWeight: '600' },
+  operatorBadge:   { color: Colors.primary, fontSize: 12, marginTop: 2 },
+  operatorChevron: { color: Colors.textSecondary, fontSize: 22 },
 });

@@ -75,7 +75,12 @@ export default function ProfileScreen() {
         <Text style={styles.profileName}>{profile?.name}</Text>
         <Text style={styles.profileBadge}>Badge #{profile?.badgeNumber}</Text>
 
-        {profile?.isShopSteward && (
+        {profile?.isAdmin && (
+          <View style={[styles.stewardBadge, { backgroundColor: '#7B1FA2' }]}>
+            <Text style={styles.stewardBadgeText}>Admin</Text>
+          </View>
+        )}
+        {profile?.isShopSteward && !profile?.isAdmin && (
           <View style={styles.stewardBadge}>
             <Text style={styles.stewardBadgeText}>Shop Steward</Text>
           </View>
@@ -130,15 +135,24 @@ export default function ProfileScreen() {
         <InfoRow label="Device" value="This device (linked)" />
       </View>
 
-      {/* Shop Steward tools */}
-      {profile?.isShopSteward && (
+      {/* Steward / Admin tools */}
+      {(profile?.isShopSteward || profile?.isAdmin) && (
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Shop Steward Tools</Text>
+          <Text style={styles.sectionLabel}>
+            {profile?.isAdmin ? 'Admin Tools' : 'Shop Steward Tools'}
+          </Text>
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => Alert.alert('Handover', 'To hand over shop steward privileges, please use the admin web app.')}
+            onPress={() => router.push('/(main)/approvals')}
           >
-            <Text style={styles.menuItemText}>Hand Over Privileges</Text>
+            <Text style={styles.menuItemText}>Pending Approvals</Text>
+            <Text style={styles.menuItemChevron}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.menuItem, { marginTop: 10 }]}
+            onPress={() => router.push('/(main)/approvals')}
+          >
+            <Text style={styles.menuItemText}>Appoint Shop Steward</Text>
             <Text style={styles.menuItemChevron}>›</Text>
           </TouchableOpacity>
         </View>

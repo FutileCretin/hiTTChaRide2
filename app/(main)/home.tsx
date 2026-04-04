@@ -1,6 +1,6 @@
-// Home screen — the main hub with 2 action buttons (+ steward approvals for shop stewards)
+// Home screen
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,44 +8,64 @@ import {
   StyleSheet,
   Modal,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
 import { Colors } from '../../constants/colors';
 import { Avatar } from '../../components/Avatar';
 import { useAuth } from '../../hooks/useAuth';
 import { authenticateWithDevice, clearFirstLoginFlag } from '../../services/auth';
 import { needsStewardConfirmation, recordStewardConfirmation } from '../../services/stewardCycle';
 import { StewardRecord } from '../../services/stewardCycle';
+import {
+  subscribeToMyPendingAppointment,
+  subscribeToActiveCommunityVote,
+  respondToAppointment,
+  voteOnAppointment,
+  AppointmentRecord,
+} from '../../services/stewardAppointment';
 
 export default function HomeScreen() {
   const { state, profile, unlock, reload } = useAuth();
 
-  // Reload profile every time home screen comes into focus
-  // so avatar changes made in profile/settings are reflected immediately
   useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [])
+    useCallback(() => { reload(); }, [])
   );
-  const [locked, setLocked] = useState(true);
-  const [stewardPrompt, setStewardPrompt] = useState<StewardRecord | null>(null);
+
+  const [locked, setLocked]                         = useState(true);
+  const [stewardPrompt, setStewardPrompt]           = useState<StewardRecord | null>(null);
   const [showStewardWelcome, setShowStewardWelcome] = useState(false);
+  const [appointmentOffer, setAppointmentOffer]     = useState<AppointmentRecord | null>(null);
+  const [communityVote, setCommunityVote]           = useState<AppointmentRecord | null>(null);
 
   // Unlock on mount
+  useEffect(() => { handleUnlock(); }, []);
+
+  // Subscribe to appointment events once we have a profile
   useEffect(() => {
-    handleUnlock();
-  }, []);
+    if (!profile) return;
+
+    const unsub1 = subscribeToMyPendingAppointment(
+      profile.badgeNumber,
+      setAppointmentOffer
+    );
+
+    const unsub2 = subscribeToActiveCommunityVote(
+      profile.badgeNumber,
+      setCommunityVote
+    );
+
+    return () => { unsub1(); unsub2(); };
+  }, [profile?.badgeNumber]);
 
   const handleUnlock = async () => {
     const success = await authenticateWithDevice();
     if (success) {
       setLocked(false);
-      // Show one-time shop steward welcome if this is their first login
-      if ((profile as any)?.firstLogin && profile?.isShopSteward) {
+      if ((profile as any)?.firstLogin && (profile?.isShopSteward || profile?.isAdmin)) {
         setShowStewardWelcome(true);
-        await clearFirstLoginFlag(profile.badgeNumber);
+        await clearFirstLoginFlag(profile!.badgeNumber);
       } else {
         checkStewardCycle();
       }
@@ -57,9 +77,7 @@ export default function HomeScreen() {
   const checkStewardCycle = async () => {
     if (!profile) return;
     const { needed, steward } = await needsStewardConfirmation(profile.badgeNumber);
-    if (needed && steward) {
-      setStewardPrompt(steward);
-    }
+    if (needed && steward) setStewardPrompt(steward);
   };
 
   const handleStewardResponse = async (confirmed: boolean) => {
@@ -67,6 +85,27 @@ export default function HomeScreen() {
     await recordStewardConfirmation(stewardPrompt.badgeNumber, profile.badgeNumber, confirmed);
     setStewardPrompt(null);
   };
+
+  const handleAppointmentResponse = async (accept: boolean) => {
+    if (!appointmentOffer || !profile) return;
+    await respondToAppointment(
+      appointmentOffer.id,
+      accept,
+      profile.badgeNumber,
+      appointmentOffer.previousStewardBadge
+    );
+    setAppointmentOffer(null);
+    if (accept) await reload(); // refresh profile so steward tools appear immediately
+  };
+
+  const handleCommunityVote = async (vote: boolean) => {
+    if (!communityVote || !profile) return;
+    await voteOnAppointment(communityVote.id, profile.badgeNumber, vote);
+    setCommunityVote(null);
+  };
+
+  // Helper — does this user have elevated access?
+  const hasElevatedAccess = profile?.isShopSteward || profile?.isAdmin;
 
   if (locked) {
     return (
@@ -99,11 +138,7 @@ export default function HomeScreen() {
           <Text style={styles.name}>{profile?.name ?? 'Operator'}</Text>
           <Text style={styles.badge}>Badge #{profile?.badgeNumber}</Text>
         </View>
-        {/* Gear / Settings icon */}
-        <TouchableOpacity
-          style={styles.gearBtn}
-          onPress={() => router.push('/(main)/profile')}
-        >
+        <TouchableOpacity style={styles.gearBtn} onPress={() => router.push('/(main)/profile')}>
           <Text style={styles.gearIcon}>⚙️</Text>
         </TouchableOpacity>
       </View>
@@ -112,7 +147,6 @@ export default function HomeScreen() {
       <View style={styles.buttonSection}>
         <Text style={styles.sectionTitle}>What would you like to do?</Text>
 
-        {/* Track Vehicle */}
         <TouchableOpacity
           style={[styles.actionButton, styles.trackButton]}
           onPress={() => router.push('/(main)/track')}
@@ -125,7 +159,6 @@ export default function HomeScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* My Vehicle */}
         <TouchableOpacity
           style={[styles.actionButton, styles.myVehicleButton]}
           onPress={() => router.push('/(main)/my-vehicle')}
@@ -138,8 +171,7 @@ export default function HomeScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* Pending Approvals — visible to shop stewards only */}
-        {profile?.isShopSteward && (
+        {hasElevatedAccess && (
           <TouchableOpacity
             style={[styles.actionButton, styles.stewardButton]}
             onPress={() => router.push('/(main)/approvals')}
@@ -154,7 +186,84 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* One-time Shop Steward Welcome Modal */}
+      {/* ── MODAL 1: Appointment offer (full-screen) ── */}
+      <Modal visible={appointmentOffer !== null} transparent animationType="fade">
+        <View style={styles.fullScreenOverlay}>
+          <View style={styles.appointmentCard}>
+            <Text style={styles.appointmentIcon}>🎖</Text>
+            <Text style={styles.appointmentTitle}>
+              You've Been Appointed Shop Steward
+            </Text>
+            <Text style={styles.appointmentBody}>
+              <Text style={styles.modalHighlight}>{appointmentOffer?.appointingName}</Text>
+              {' '}(Badge #{appointmentOffer?.appointingBadge}) has appointed you as the new{' '}
+              <Text style={styles.modalHighlight}>Shop Steward</Text> for hiTTChaRide.
+            </Text>
+            {appointmentOffer?.previousStewardBadge ? (
+              <Text style={styles.appointmentStepping}>
+                {appointmentOffer.previousStewardName} (Badge #{appointmentOffer.previousStewardBadge}) is stepping down.
+              </Text>
+            ) : null}
+            <Text style={styles.appointmentNote}>
+              As Shop Steward you will approve new operator registrations and manage the community.
+              You can hand over this role at any time.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnNo]}
+                onPress={() => handleAppointmentResponse(false)}
+              >
+                <Text style={styles.modalBtnText}>Decline</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnYes]}
+                onPress={() => handleAppointmentResponse(true)}
+              >
+                <Text style={styles.modalBtnText}>Accept</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 2: Community vote ── */}
+      <Modal visible={communityVote !== null} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.communityIcon}>📣</Text>
+            <Text style={styles.modalTitle}>New Shop Steward</Text>
+            <Text style={styles.modalBody}>
+              <Text style={styles.modalHighlight}>{communityVote?.appointedName}</Text>
+              {' '}(Badge #{communityVote?.appointedBadge}) has accepted the role of{' '}
+              <Text style={styles.modalHighlight}>Shop Steward</Text>.
+            </Text>
+            {communityVote?.previousStewardBadge ? (
+              <Text style={styles.modalBody}>
+                {communityVote.previousStewardName} has stepped down.
+              </Text>
+            ) : null}
+            <Text style={[styles.modalBody, { marginTop: 12, fontStyle: 'italic' }]}>
+              Do you recognise this as a legitimate appointment?
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnNo]}
+                onPress={() => handleCommunityVote(false)}
+              >
+                <Text style={styles.modalBtnText}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnYes]}
+                onPress={() => handleCommunityVote(true)}
+              >
+                <Text style={styles.modalBtnText}>Yes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 3: One-time Shop Steward welcome ── */}
       <Modal visible={showStewardWelcome} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -168,10 +277,7 @@ export default function HomeScreen() {
             </Text>
             <TouchableOpacity
               style={[styles.modalBtn, styles.modalBtnYes, { marginTop: 20 }]}
-              onPress={() => {
-                setShowStewardWelcome(false);
-                checkStewardCycle();
-              }}
+              onPress={() => { setShowStewardWelcome(false); checkStewardCycle(); }}
             >
               <Text style={styles.modalBtnText}>Let's Go</Text>
             </TouchableOpacity>
@@ -179,12 +285,8 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
-      {/* Shop Steward Confirmation Modal */}
-      <Modal
-        visible={stewardPrompt !== null}
-        transparent
-        animationType="fade"
-      >
+      {/* ── MODAL 4: 2-month steward confirmation ── */}
+      <Modal visible={stewardPrompt !== null} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Shop Steward Confirmation</Text>
@@ -194,7 +296,6 @@ export default function HomeScreen() {
               {' '}still your shop steward?
             </Text>
             <Text style={styles.modalSub}>Badge #{stewardPrompt?.badgeNumber}</Text>
-
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalBtn, styles.modalBtnYes]}
@@ -218,174 +319,76 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    paddingTop: 60,
-    paddingHorizontal: 24,
+    flex: 1, backgroundColor: Colors.background,
+    paddingTop: 60, paddingHorizontal: 24,
   },
   lockScreen: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
+    flex: 1, backgroundColor: Colors.background,
+    alignItems: 'center', justifyContent: 'center', gap: 16,
   },
-  lockTitle: {
-    color: Colors.white,
-    fontSize: 28,
-    fontWeight: '800',
-  },
-  lockSub: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-  },
+  lockTitle:   { color: Colors.white, fontSize: 28, fontWeight: '800' },
+  lockSub:     { color: Colors.textSecondary, fontSize: 14 },
   unlockBtn: {
-    marginTop: 16,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 40,
-    paddingVertical: 14,
-    borderRadius: 14,
+    marginTop: 16, backgroundColor: Colors.primary,
+    paddingHorizontal: 40, paddingVertical: 14, borderRadius: 14,
   },
-  unlockBtnText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    marginBottom: 48,
-  },
+  unlockBtnText: { color: Colors.white, fontWeight: '700', fontSize: 16 },
+
+  header: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 48 },
   gearBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+    alignItems: 'center', justifyContent: 'center',
   },
-  gearIcon: {
-    fontSize: 20,
-  },
-  headerText: {
-    flex: 1,
-  },
-  greeting: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-  },
-  name: {
-    color: Colors.white,
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  badge: {
-    color: Colors.primary,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 2,
-  },
+  gearIcon:    { fontSize: 20 },
+  headerText:  { flex: 1 },
+  greeting:    { color: Colors.textSecondary, fontSize: 13 },
+  name:        { color: Colors.white, fontSize: 20, fontWeight: '700' },
+  badge:       { color: Colors.primary, fontSize: 12, fontWeight: '600', marginTop: 2 },
+
   sectionTitle: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 20,
+    color: Colors.textSecondary, fontSize: 13, fontWeight: '600',
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 20,
   },
-  buttonSection: {
-    flex: 1,
+  buttonSection: { flex: 1 },
+  actionButton:  { borderRadius: 20, padding: 28, marginBottom: 16 },
+  trackButton:   { backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.border },
+  myVehicleButton: { backgroundColor: Colors.primary },
+  stewardButton: { backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.primary },
+  actionIcon:    { fontSize: 36, marginBottom: 12 },
+  actionTitle:   { color: Colors.white, fontSize: 22, fontWeight: '800', marginBottom: 8 },
+  actionDesc:    { color: 'rgba(255,255,255,0.7)', fontSize: 14, lineHeight: 20 },
+
+  // ── Full-screen appointment overlay ──
+  fullScreenOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.92)',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
   },
-  actionButton: {
-    borderRadius: 20,
-    padding: 28,
-    marginBottom: 16,
+  appointmentCard: {
+    backgroundColor: Colors.surface, borderRadius: 24,
+    padding: 28, width: '100%',
+    borderWidth: 2, borderColor: Colors.primary,
   },
-  trackButton: {
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  myVehicleButton: {
-    backgroundColor: Colors.primary,
-  },
-  stewardButton: {
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  actionIcon: {
-    fontSize: 36,
-    marginBottom: 12,
-  },
-  actionTitle: {
-    color: Colors.white,
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  actionDesc: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  // Modal
+  appointmentIcon:     { fontSize: 56, textAlign: 'center', marginBottom: 16 },
+  appointmentTitle:    { color: Colors.white, fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 16 },
+  appointmentBody:     { color: Colors.textSecondary, fontSize: 15, lineHeight: 22, marginBottom: 10 },
+  appointmentStepping: { color: Colors.accent, fontSize: 13, marginBottom: 10 },
+  appointmentNote:     { color: Colors.grayDark, fontSize: 12, lineHeight: 18, marginBottom: 20 },
+
+  // ── Shared modal ──
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
   },
-  modalCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 20,
-    padding: 28,
-    width: '100%',
-  },
-  modalTitle: {
-    color: Colors.white,
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 16,
-  },
-  modalBody: {
-    color: Colors.textSecondary,
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 4,
-  },
-  modalHighlight: {
-    color: Colors.white,
-    fontWeight: '700',
-  },
-  modalSub: {
-    color: Colors.primary,
-    fontSize: 13,
-    marginBottom: 28,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  modalBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  modalBtnYes: {
-    backgroundColor: Colors.success,
-  },
-  modalBtnNo: {
-    backgroundColor: Colors.grayDark,
-  },
-  modalBtnText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
+  modalCard:    { backgroundColor: Colors.surface, borderRadius: 20, padding: 28, width: '100%' },
+  communityIcon: { fontSize: 36, textAlign: 'center', marginBottom: 12 },
+  modalTitle:   { color: Colors.white, fontSize: 20, fontWeight: '800', marginBottom: 16 },
+  modalBody:    { color: Colors.textSecondary, fontSize: 15, lineHeight: 23, marginBottom: 4 },
+  modalHighlight: { color: Colors.white, fontWeight: '700' },
+  modalSub:     { color: Colors.primary, fontSize: 13, marginBottom: 28 },
+  modalButtons: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  modalBtn:     { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  modalBtnYes:  { backgroundColor: Colors.success },
+  modalBtnNo:   { backgroundColor: Colors.grayDark },
+  modalBtnText: { color: Colors.white, fontWeight: '700', fontSize: 16 },
 });
