@@ -39,9 +39,31 @@ interface InterpState {
   toLat: number;
   toLon: number;
   startTime: number;
+  // Dead reckoning — extrapolate forward after interpolation completes
+  drLat: number;
+  drLon: number;
+  drHeading: number;
+  drSpeedKmH: number;
+  drStartTime: number;
 }
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * Math.min(t, 1);
+
+// Move a GPS coordinate forward using heading + speed (Transit-app style)
+const deadReckon = (
+  lat: number, lon: number,
+  headingDeg: number, speedKmH: number,
+  elapsedMs: number
+): { lat: number; lon: number } => {
+  if (speedKmH < 3) return { lat, lon }; // don't drift stationary buses
+  const elapsedHours = elapsedMs / 3_600_000;
+  const distKm       = speedKmH * elapsedHours;
+  const R            = 6371;
+  const hRad         = (headingDeg * Math.PI) / 180;
+  const dLat         = (distKm * Math.cos(hRad) / R) * (180 / Math.PI);
+  const dLon         = (distKm * Math.sin(hRad) / R) * (180 / Math.PI) / Math.cos(lat * Math.PI / 180);
+  return { lat: lat + dLat, lon: lon + dLon };
+};
 
 const CIRCLE = 40; // outer diameter in dp
 
@@ -77,8 +99,8 @@ export default function TrackScreen() {
     return { x, y };
   };
 
-  // 10 fps ticker — interpolates vehicle positions AND re-renders so overlay
-  // circles stay locked to the map while the user is panning / zooming.
+  // 10 fps ticker — interpolates between GPS pings, then dead-reckons forward
+  // so buses keep moving smoothly even during GPS gaps (Transit-app style).
   useEffect(() => {
     const id = setInterval(() => {
       const now = Date.now();
@@ -87,14 +109,26 @@ export default function TrackScreen() {
         const next = prev.map((v) => {
           const ip = interpRef.current.get(v.busNumber);
           if (!ip) return v;
+
           const t = (now - ip.startTime) / POLL_INTERVAL_MS;
-          if (t >= 1) return v;
+
+          if (t < 1) {
+            // Phase 1: interpolate toward new GPS fix
+            changed = true;
+            return {
+              ...v,
+              displayLat: lerp(ip.fromLat, ip.toLat, t),
+              displayLon: lerp(ip.fromLon, ip.toLon, t),
+            };
+          }
+
+          // Phase 2: dead reckon forward from last known position
+          // Cap at 30 seconds so buses don't drift too far if GPS stops
+          const drElapsed = Math.min(now - ip.drStartTime, 30_000);
+          const dr = deadReckon(ip.drLat, ip.drLon, ip.drHeading, ip.drSpeedKmH, drElapsed);
+          if (dr.lat === ip.drLat && dr.lon === ip.drLon) return v; // stationary
           changed = true;
-          return {
-            ...v,
-            displayLat: lerp(ip.fromLat, ip.toLat, t),
-            displayLon: lerp(ip.fromLon, ip.toLon, t),
-          };
+          return { ...v, displayLat: dr.lat, displayLon: dr.lon };
         });
         return changed ? next : prev;
       });
@@ -114,13 +148,16 @@ export default function TrackScreen() {
           const existing = prevMap.get(vehicle.busNumber);
           const fromLat = existing?.displayLat ?? vehicle.lat;
           const fromLon = existing?.displayLon ?? vehicle.lon;
-          if (fromLat !== vehicle.lat || fromLon !== vehicle.lon) {
-            interpRef.current.set(vehicle.busNumber, {
-              fromLat, fromLon,
-              toLat: vehicle.lat, toLon: vehicle.lon,
-              startTime: now,
-            });
-          }
+          interpRef.current.set(vehicle.busNumber, {
+            fromLat, fromLon,
+            toLat: vehicle.lat, toLon: vehicle.lon,
+            startTime: now,
+            // Dead reckoning starts from the new GPS fix
+            drLat: vehicle.lat, drLon: vehicle.lon,
+            drHeading: vehicle.heading,
+            drSpeedKmH: vehicle.speedKmH,
+            drStartTime: now + POLL_INTERVAL_MS, // begins after interp finishes
+          });
           return { ...vehicle, displayLat: fromLat, displayLon: fromLon };
         });
       });
