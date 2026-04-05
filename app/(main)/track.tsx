@@ -72,8 +72,13 @@ export default function TrackScreen() {
   const [displayed, setDisplayed] = useState<DisplayVehicle[]>([]);
   const [, setTick] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<DisplayVehicle | null>(null);
+  const [selectedBusNumber, setSelectedBusNumber] = useState<string | null>(null);
   const [dingSent, setDingSent] = useState(false);
+
+  // Derive selected from live displayed data so push token & speed stay current
+  const selected = selectedBusNumber
+    ? (displayed.find(v => v.busNumber === selectedBusNumber) ?? null)
+    : null;
 
   const mapRef    = useRef<MapView>(null);
   const interpRef = useRef<Map<string, InterpState>>(new Map());
@@ -177,7 +182,7 @@ export default function TrackScreen() {
 
   const focusVehicle = (vehicle: DisplayVehicle) => {
     setDingSent(false);
-    setSelected(vehicle);
+    setSelectedBusNumber(vehicle.busNumber);
     mapRef.current?.animateToRegion(
       {
         latitude: vehicle.displayLat,
@@ -257,11 +262,7 @@ export default function TrackScreen() {
       )}
 
       {selected && (
-        <TouchableOpacity
-          style={styles.infoCard}
-          onPress={() => setSelected(null)}
-          activeOpacity={0.95}
-        >
+        <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Avatar config={selected.avatarConfig} size={52} />
             <View style={styles.infoText}>
@@ -279,25 +280,28 @@ export default function TrackScreen() {
               </Text>
               <Text style={[
                 styles.infoFreshness,
-                selected.secsSinceReport > 60 ? styles.infoStale : styles.infoFresh,
+                (selected.secsSinceReport ?? 0) > 60 ? styles.infoStale : styles.infoFresh,
               ]}>
-                GPS updated {selected.secsSinceReport}s ago
+                GPS updated {selected.secsSinceReport ?? '?'}s ago
               </Text>
             </View>
+
+            {/* Bell icon — right side of card */}
+            <View style={styles.infoActions}>
+              <TouchableOpacity
+                style={[styles.bellBtn, dingSent && styles.bellBtnSent, !selected.expoPushToken && styles.bellBtnDisabled]}
+                onPress={handleDing}
+                disabled={dingSent || !selected.expoPushToken}
+              >
+                <Text style={styles.bellIcon}>🔔</Text>
+                {dingSent && <Text style={styles.bellSentLabel}>Sent!</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedBusNumber(null)}>
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          {selected.expoPushToken && (
-            <TouchableOpacity
-              style={[styles.dingBtn, dingSent && styles.dingBtnSent]}
-              onPress={handleDing}
-              disabled={dingSent}
-            >
-              <Text style={styles.dingBtnText}>
-                {dingSent ? '✓ Ding sent — wait 5 min' : '🔔 Ding Driver'}
-              </Text>
-            </TouchableOpacity>
-          )}
-          <Text style={styles.infoDismiss}>Tap card to dismiss</Text>
-        </TouchableOpacity>
+        </View>
       )}
     </View>
   );
@@ -387,18 +391,25 @@ const styles = StyleSheet.create({
   infoGarage: { color: Colors.accent, fontSize: 13, fontWeight: '700', marginTop: 2 },
   infoRoute:  { color: Colors.textSecondary, fontSize: 13 },
   infoSpeed:  { color: Colors.success, fontSize: 13, fontWeight: '600', marginTop: 2 },
-  infoFreshness: { fontSize: 11, marginTop: 2 },
-  infoFresh:     { color: Colors.success },
-  infoStale:     { color: '#F59E0B' },
-  dingBtn: {
-    backgroundColor: Colors.primary, borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', marginTop: 16,
+  infoFreshness:  { fontSize: 11, marginTop: 2 },
+  infoFresh:      { color: Colors.success },
+  infoStale:      { color: '#F59E0B' },
+  infoActions:    { alignItems: 'center', gap: 10 },
+  bellBtn: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: Colors.primary,
+    alignItems: 'center', justifyContent: 'center',
   },
-  dingBtnSent: { backgroundColor: Colors.success },
-  dingBtnText: { color: Colors.white, fontWeight: '800', fontSize: 16 },
-  infoDismiss: {
-    color: Colors.grayDark, fontSize: 11, textAlign: 'center', marginTop: 10,
+  bellBtnSent:     { backgroundColor: Colors.success },
+  bellBtnDisabled: { backgroundColor: Colors.grayDark, opacity: 0.4 },
+  bellIcon:        { fontSize: 24 },
+  bellSentLabel:   { color: Colors.white, fontSize: 8, fontWeight: '700', marginTop: 1 },
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: Colors.grayDark,
+    alignItems: 'center', justifyContent: 'center',
   },
+  closeBtnText: { color: Colors.textSecondary, fontSize: 14, fontWeight: '700' },
 });
 
 const darkMapStyle = [
