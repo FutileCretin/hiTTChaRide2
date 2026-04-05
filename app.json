@@ -23,7 +23,12 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "package": "com.hittcharide.app",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCugWNKu6G8qLCDZIb_J8DWTn7FzzX6Tcs"
+        }
+      }
     },
     "web": {
       "output": "static",
