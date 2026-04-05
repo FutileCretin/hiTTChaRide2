@@ -172,7 +172,7 @@ export default function TrackScreen() {
     if (!selected?.expoPushToken || dingSent) return;
     setDingSent(true);
     await sendDing(selected.expoPushToken, selected.busNumber);
-    setTimeout(() => setDingSent(false), 10000); // 10s cooldown
+    setTimeout(() => setDingSent(false), 300000); // 5 min cooldown
   };
 
   const focusVehicle = (vehicle: DisplayVehicle) => {
@@ -292,7 +292,7 @@ export default function TrackScreen() {
               disabled={dingSent}
             >
               <Text style={styles.dingBtnText}>
-                {dingSent ? '✓ Ding sent!' : '🔔 Ding Driver'}
+                {dingSent ? '✓ Ding sent — wait 5 min' : '🔔 Ding Driver'}
               </Text>
             </TouchableOpacity>
           )}
