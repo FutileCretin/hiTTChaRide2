@@ -59,7 +59,8 @@ export function startBroadcast(
   avatarConfig: AvatarConfig,
   garage: GarageCode | null,
   onUpdate: (lat: number, lon: number) => void,
-  onExpire: () => void
+  onExpire: () => void,
+  onNotFound?: () => void
 ): () => void {
   const docRef = doc(db, 'activeBroadcasts', busNumber);
   let stopped = false;
@@ -69,7 +70,12 @@ export function startBroadcast(
   // Write initial record immediately
   const writePosition = async () => {
     const location = await fetchVehicleLocation(busNumber);
-    if (!location || stopped) return;
+    if (stopped) return;
+    if (!location) {
+      stopped = true;
+      onNotFound?.();
+      return;
+    }
 
     await setDoc(docRef, {
       busNumber,

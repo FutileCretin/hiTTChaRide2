@@ -102,6 +102,15 @@ export default function FollowMyBusScreen() {
           'Your 1-hour broadcast session has ended.',
           [{ text: 'OK', onPress: () => router.replace('/(main)/home') }]
         );
+      },
+      () => {
+        // Bus number not found in TTC feed
+        setBroadcasting(false);
+        stopBroadcastFn.current = null;
+        Alert.alert(
+          'Bus Not Found',
+          `Bus #${trimmed} isn't showing up in the TTC system right now.\n\nMake sure you entered your vehicle number (not route number) and that your bus is currently active.`
+        );
       }
     );
 
