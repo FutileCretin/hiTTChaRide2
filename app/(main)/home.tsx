@@ -9,6 +9,7 @@ import {
   Modal,
   Alert,
   ScrollView,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
@@ -110,6 +111,11 @@ export default function HomeScreen() {
   if (locked) {
     return (
       <View style={styles.lockScreen}>
+        <Image
+          source={require('../../assets/images/icon-transparent.png')}
+          style={styles.lockBg}
+          resizeMode="contain"
+        />
         <Avatar
           config={profile?.avatarConfig ?? { style: 'conductor', skinTone: Colors.skinTones.lightBrown }}
           size={100}
@@ -325,6 +331,11 @@ const styles = StyleSheet.create({
   lockScreen: {
     flex: 1, backgroundColor: Colors.background,
     alignItems: 'center', justifyContent: 'center', gap: 16,
+  },
+  lockBg: {
+    position: 'absolute',
+    width: '80%', height: '50%',
+    opacity: 0.08,
   },
   lockTitle:   { color: Colors.white, fontSize: 28, fontWeight: '800' },
   lockSub:     { color: Colors.textSecondary, fontSize: 14 },
