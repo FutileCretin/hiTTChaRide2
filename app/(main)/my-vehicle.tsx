@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '../../constants/colors';
-import { startBroadcast, stopBroadcast, BROADCAST_DURATION_MS, GarageCode } from '../../services/vehicleBroadcast';
+import { startBroadcast, stopBroadcast, BROADCAST_DURATION_MS, GarageCode, requestLocationPermission } from '../../services/vehicleBroadcast';
 import { getStoredBadge, getUserProfile, UserProfile } from '../../services/auth';
 
 const GARAGES: GarageCode[] = ['AGRA', 'QSGA', 'MDGA', 'WLGA', 'EGGA', 'BRGA', 'MLGA', 'MNGA'];
@@ -74,13 +74,22 @@ export default function FollowMyBusScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [broadcasting]);
 
-  const handleStart = () => {
+  const handleStart = async () => {
     const trimmed = busNumber.trim();
     if (!trimmed) {
       Alert.alert('Enter bus number', 'Please enter your bus number to start broadcasting.');
       return;
     }
     if (!profile) return;
+
+    const hasPermission = await requestLocationPermission();
+    if (!hasPermission) {
+      Alert.alert(
+        'Location Permission Required',
+        'hiTTChaRide needs your location to broadcast your position. Please enable it in Settings.'
+      );
+      return;
+    }
 
     setBroadcasting(true);
 
@@ -101,15 +110,6 @@ export default function FollowMyBusScreen() {
           'Broadcast Ended',
           'Your 1-hour broadcast session has ended.',
           [{ text: 'OK', onPress: () => router.replace('/(main)/home') }]
-        );
-      },
-      () => {
-        // Bus number not found in TTC feed
-        setBroadcasting(false);
-        stopBroadcastFn.current = null;
-        Alert.alert(
-          'Bus Not Found',
-          `Bus #${trimmed} isn't showing up in the TTC system right now.\n\nMake sure you entered your vehicle number (not route number) and that your bus is currently active.`
         );
       }
     );
