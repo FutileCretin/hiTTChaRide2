@@ -173,9 +173,9 @@ export default function TrackScreen() {
             onPress={() => focusVehicle(vehicle)}
             activeOpacity={0.8}
           >
-            <Text style={styles.busNum}>#{vehicle.busNumber}</Text>
+            <Text style={styles.busNum} numberOfLines={1} adjustsFontSizeToFit>#{vehicle.busNumber}</Text>
             {vehicle.garage ? (
-              <Text style={styles.garageText}>{vehicle.garage}</Text>
+              <Text style={styles.garageText} numberOfLines={1} adjustsFontSizeToFit>{vehicle.garage}</Text>
             ) : null}
           </TouchableOpacity>
         );
@@ -254,6 +254,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
+    overflow: 'hidden',
+    paddingHorizontal: 3,
     // Shadow so circles stand out against pale map tiles
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -265,14 +267,16 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 10,
     fontWeight: '800',
-    lineHeight: 12,
+    lineHeight: 11,
+    textAlign: 'center',
   },
   garageText: {
     color: '#90CAF9',
     fontSize: 7,
     fontWeight: '700',
-    letterSpacing: 0.8,
-    lineHeight: 9,
+    letterSpacing: 0,
+    lineHeight: 8,
+    textAlign: 'center',
   },
 
   // ── Chrome ───────────────────────────────────────────────────────────────
