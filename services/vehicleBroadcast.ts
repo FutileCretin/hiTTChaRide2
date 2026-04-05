@@ -1,5 +1,5 @@
 // Vehicle broadcast service
-// Uses the driver's phone GPS — works for ALL buses, in service or deadheading
+// Uses the TTC's public GPS feed — no personal location data from drivers
 
 import {
   doc,
@@ -10,28 +10,28 @@ import {
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore';
-import * as Location from 'expo-location';
 import { db } from './firebase';
+import { fetchVehicleLocation } from './ttcApi';
 
 export const BROADCAST_DURATION_MS = 60 * 60 * 1000; // 1 hour
-export const POLL_INTERVAL_MS      = 5000;            // update map every 5 s
+export const POLL_INTERVAL_MS      = 5000;            // poll TTC feed every 5 s
 
 export type GarageCode = 'AGRA' | 'QSGA' | 'MDGA' | 'WLGA' | 'EGGA' | 'BRGA' | 'MLGA' | 'MNGA';
 
 export interface BroadcastVehicle {
-  busNumber:     string;
-  badgeNumber:   string;
-  operatorName:  string;
-  avatarConfig:  AvatarConfig;
-  garage:        GarageCode | null;
-  lat:           number;
-  lon:           number;
-  heading:       number;
-  speedKmH:      number;
-  routeTag:      string;
-  secsSinceReport: number;
+  busNumber:        string;
+  badgeNumber:      string;
+  operatorName:     string;
+  avatarConfig:     AvatarConfig;
+  garage:           GarageCode | null;
+  lat:              number;
+  lon:              number;
+  heading:          number;
+  speedKmH:         number;
+  routeTag:         string;
+  secsSinceReport:  number;
   broadcastStarted: Timestamp;
-  lastUpdated:   Timestamp;
+  lastUpdated:      Timestamp;
 }
 
 export type AvatarStyle =
@@ -48,16 +48,8 @@ export interface AvatarConfig {
   skinTone: string;
 }
 
-// Request location permission — call this before startBroadcast
-export async function requestLocationPermission(): Promise<boolean> {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  if (status !== 'granted') return false;
-  // Background permission keeps broadcasting when screen is off
-  const bg = await Location.requestBackgroundPermissionsAsync();
-  return bg.status === 'granted' || status === 'granted';
-}
-
-// Start broadcasting using the driver's phone GPS
+// Start broadcasting: pulls bus position from TTC public feed every 5 s
+// No personal location data — only the bus transponder GPS is used
 // Returns a cleanup function to stop broadcasting
 export function startBroadcast(
   busNumber:    string,
@@ -66,82 +58,82 @@ export function startBroadcast(
   avatarConfig: AvatarConfig,
   garage:       GarageCode | null,
   onUpdate:     (lat: number, lon: number) => void,
-  onExpire:     () => void
+  onExpire:     () => void,
+  onNotFound?:  () => void
 ): () => void {
   const docRef           = doc(db, 'activeBroadcasts', busNumber);
   let   stopped          = false;
+  let   firstWriteDone   = false;
   const broadcastStartTime = Date.now();
-  let   locationSub: Location.LocationSubscription | null = null;
-  let   lastLat          = 0;
-  let   lastLon          = 0;
-  let   lastHeading      = 0;
-  let   lastSpeedKmH     = 0;
-  let   lastWriteTime    = 0;
 
-  const writePosition = async (lat: number, lon: number, heading: number, speedKmH: number) => {
+  const writePosition = async () => {
+    const location = await fetchVehicleLocation(busNumber);
+    if (stopped) return;
+
+    if (!location) {
+      // Bus not in TTC feed yet — only give up on the very first attempt
+      if (!firstWriteDone) {
+        stopped = true;
+        onNotFound?.();
+      }
+      return;
+    }
+
+    firstWriteDone = true;
+
+    await setDoc(
+      docRef,
+      {
+        busNumber,
+        badgeNumber,
+        operatorName,
+        avatarConfig,
+        garage: garage ?? null,
+        lat:              location.lat,
+        lon:              location.lon,
+        heading:          location.heading,
+        speedKmH:         location.speedKmH,
+        routeTag:         location.routeTag,
+        secsSinceReport:  location.secsSinceReport,
+        lastUpdated:      serverTimestamp(),
+        ...(firstWriteDone ? {} : { broadcastStarted: serverTimestamp() }),
+      },
+      { merge: true }
+    );
+
+    onUpdate(location.lat, location.lon);
+  };
+
+  // Write immediately, then on interval
+  writePosition().then(() => {
+    if (!stopped && !firstWriteDone) {
+      // First write failed silently — set broadcastStarted on next success
+    }
+    if (firstWriteDone) {
+      setDoc(docRef, { broadcastStarted: serverTimestamp() }, { merge: true });
+    }
+  });
+
+  const interval = setInterval(async () => {
     if (stopped) return;
 
     const elapsed = Date.now() - broadcastStartTime;
     if (elapsed >= BROADCAST_DURATION_MS) {
-      cleanup();
+      stopped = true;
+      clearInterval(interval);
+      stopBroadcast(busNumber);
       onExpire();
       return;
     }
 
-    const isFirstWrite = lastWriteTime === 0;
-    lastLat       = lat;
-    lastLon       = lon;
-    lastHeading   = heading;
-    lastSpeedKmH  = speedKmH;
-    lastWriteTime = Date.now();
+    writePosition();
+  }, POLL_INTERVAL_MS);
 
-    const payload = {
-      lat, lon, heading,
-      speedKmH,
-      routeTag:        '',
-      secsSinceReport: 0,
-      lastUpdated:     serverTimestamp(),
-      ...(isFirstWrite ? {
-        busNumber, badgeNumber, operatorName, avatarConfig,
-        garage: garage ?? null,
-        broadcastStarted: serverTimestamp(),
-      } : {}),
-    };
-
-    await setDoc(docRef, payload, { merge: true });
-    onUpdate(lat, lon);
-  };
-
-  const startWatching = async () => {
-    locationSub = await Location.watchPositionAsync(
-      {
-        accuracy:         Location.Accuracy.BestForNavigation,
-        timeInterval:     POLL_INTERVAL_MS,
-        distanceInterval: 0,
-      },
-      (loc) => {
-        const { latitude, longitude, heading, speed } = loc.coords;
-        const speedKmH = Math.max(0, (speed ?? 0) * 3.6);
-        writePosition(latitude, longitude, heading ?? 0, speedKmH);
-      }
-    );
-  };
-
-  startWatching();
-
-  // Expiry safety net in case GPS stops firing
-  const expiryTimer = setTimeout(() => {
-    if (!stopped) { cleanup(); onExpire(); }
-  }, BROADCAST_DURATION_MS + 5000);
-
-  const cleanup = () => {
+  return () => {
     stopped = true;
-    clearTimeout(expiryTimer);
-    locationSub?.remove();
+    clearInterval(interval);
     stopBroadcast(busNumber);
   };
-
-  return cleanup;
 }
 
 // Remove vehicle from Firestore
@@ -167,7 +159,7 @@ export function subscribeToActiveBroadcasts(
       if (now - started < BROADCAST_DURATION_MS) {
         vehicles.push(data);
       } else {
-        deleteDoc(docSnap.ref); // clean up expired
+        deleteDoc(docSnap.ref);
       }
     });
 

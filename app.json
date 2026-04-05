@@ -12,9 +12,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.hittcharide.app",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "hiTTChaRide uses your device authentication to keep your account secure.",
-        "NSLocationWhenInUseUsageDescription": "hiTTChaRide uses your location to broadcast your bus position to other operators.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "hiTTChaRide uses your location in the background so your position stays live even with the screen off."
+        "NSFaceIDUsageDescription": "hiTTChaRide uses your device authentication to keep your account secure."
       }
     },
     "android": {
@@ -38,12 +36,6 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "hiTTChaRide uses your location to broadcast your bus position to other operators, even when the screen is off."
-        }
-      ],
       [
         "expo-splash-screen",
         {
