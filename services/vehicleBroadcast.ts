@@ -32,6 +32,7 @@ export interface BroadcastVehicle {
   heading: number;
   speedKmH: number;
   routeTag: string;
+  secsSinceReport: number;
   broadcastStarted: Timestamp;
   lastUpdated: Timestamp;
 }
@@ -88,6 +89,7 @@ export function startBroadcast(
       heading: location.heading,
       speedKmH: location.speedKmH,
       routeTag: location.routeTag,
+      secsSinceReport: location.secsSinceReport,
       broadcastStarted: serverTimestamp(),
       lastUpdated: serverTimestamp(),
     } as any);
@@ -121,6 +123,7 @@ export function startBroadcast(
         heading: location.heading,
         speedKmH: location.speedKmH,
         routeTag: location.routeTag,
+        secsSinceReport: location.secsSinceReport,
         lastUpdated: serverTimestamp(),
       },
       { merge: true }

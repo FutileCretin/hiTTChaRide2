@@ -230,6 +230,12 @@ export default function TrackScreen() {
               <Text style={styles.infoSpeed}>
                 {Math.round(selected.speedKmH)} km/h
               </Text>
+              <Text style={[
+                styles.infoFreshness,
+                selected.secsSinceReport > 60 ? styles.infoStale : styles.infoFresh,
+              ]}>
+                GPS updated {selected.secsSinceReport}s ago
+              </Text>
             </View>
           </View>
           <Text style={styles.infoDismiss}>Tap to dismiss</Text>
@@ -323,6 +329,9 @@ const styles = StyleSheet.create({
   infoGarage: { color: Colors.accent, fontSize: 13, fontWeight: '700', marginTop: 2 },
   infoRoute:  { color: Colors.textSecondary, fontSize: 13 },
   infoSpeed:  { color: Colors.success, fontSize: 13, fontWeight: '600', marginTop: 2 },
+  infoFreshness: { fontSize: 11, marginTop: 2 },
+  infoFresh:     { color: Colors.success },
+  infoStale:     { color: '#F59E0B' },
   infoDismiss: {
     color: Colors.grayDark, fontSize: 11, textAlign: 'center', marginTop: 12,
   },
