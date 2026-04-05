@@ -113,12 +113,8 @@ export default function HomeScreen() {
       <View style={styles.lockScreen}>
         <Image
           source={require('../../assets/images/icon-transparent.png')}
-          style={styles.lockBg}
+          style={styles.lockLogo}
           resizeMode="contain"
-        />
-        <Avatar
-          config={profile?.avatarConfig ?? { style: 'conductor', skinTone: Colors.skinTones.lightBrown }}
-          size={100}
         />
         <Text style={styles.lockTitle}>hiTTChaRide</Text>
         <Text style={styles.lockSub}>Unlock your device to continue</Text>
@@ -332,10 +328,9 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: Colors.background,
     alignItems: 'center', justifyContent: 'center', gap: 16,
   },
-  lockBg: {
-    position: 'absolute',
-    width: '80%', height: '50%',
-    opacity: 0.08,
+  lockLogo: {
+    width: 220, height: 220,
+    marginBottom: 8,
   },
   lockTitle:   { color: Colors.white, fontSize: 28, fontWeight: '800' },
   lockSub:     { color: Colors.textSecondary, fontSize: 14 },
