@@ -9,7 +9,6 @@ import {
   Modal,
   Alert,
   ScrollView,
-  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
@@ -153,7 +152,7 @@ export default function HomeScreen() {
           onPress={() => router.push('/(main)/track')}
           activeOpacity={0.85}
         >
-          <Image source={require('../../assets/images/icon.png')} style={styles.actionIcon} />
+          <Text style={styles.actionIcon}>🗺</Text>
           <Text style={styles.actionTitle}>Hitch a Ride</Text>
           <Text style={styles.actionDesc}>
             See all operators currently broadcasting on the map
@@ -356,7 +355,7 @@ const styles = StyleSheet.create({
   trackButton:   { backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.border },
   myVehicleButton: { backgroundColor: Colors.primary },
   stewardButton: { backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.primary },
-  actionIcon:    { width: 64, height: 64, marginBottom: 12, borderRadius: 12 },
+  actionIcon:    { fontSize: 36, marginBottom: 12 },
   actionTitle:   { color: Colors.white, fontSize: 22, fontWeight: '800', marginBottom: 8 },
   actionDesc:    { color: 'rgba(255,255,255,0.7)', fontSize: 14, lineHeight: 20 },
 
