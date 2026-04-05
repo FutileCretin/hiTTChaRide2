@@ -61,9 +61,9 @@ export function startBroadcast(
   onExpire:     () => void,
   onNotFound?:  () => void
 ): () => void {
-  const docRef           = doc(db, 'activeBroadcasts', busNumber);
-  let   stopped          = false;
-  let   firstWriteDone   = false;
+  const docRef             = doc(db, 'activeBroadcasts', busNumber);
+  let   stopped            = false;
+  let   firstWriteDone     = false;
   const broadcastStartTime = Date.now();
 
   const writePosition = async () => {
@@ -71,14 +71,11 @@ export function startBroadcast(
     if (stopped) return;
 
     if (!location) {
-      // Bus not in TTC feed yet — only give up on the very first attempt
-      if (!firstWriteDone) {
-        stopped = true;
-        onNotFound?.();
-      }
+      if (!firstWriteDone) { stopped = true; onNotFound?.(); }
       return;
     }
 
+    const isFirst = !firstWriteDone;
     firstWriteDone = true;
 
     await setDoc(
@@ -88,15 +85,17 @@ export function startBroadcast(
         badgeNumber,
         operatorName,
         avatarConfig,
-        garage: garage ?? null,
-        lat:              location.lat,
-        lon:              location.lon,
-        heading:          location.heading,
-        speedKmH:         location.speedKmH,
-        routeTag:         location.routeTag,
-        secsSinceReport:  location.secsSinceReport,
-        lastUpdated:      serverTimestamp(),
-        ...(firstWriteDone ? {} : { broadcastStarted: serverTimestamp() }),
+        garage:          garage ?? null,
+        lat:             location.lat,
+        lon:             location.lon,
+        heading:         location.heading,
+        speedKmH:        location.speedKmH,
+        routeTag:        location.routeTag,
+        secsSinceReport: location.secsSinceReport,
+        lastUpdated:     serverTimestamp(),
+        // broadcastStarted is written on the very first write so the
+        // viewer's filter passes immediately — no second-write delay
+        ...(isFirst ? { broadcastStarted: serverTimestamp() } : {}),
       },
       { merge: true }
     );
@@ -105,14 +104,7 @@ export function startBroadcast(
   };
 
   // Write immediately, then on interval
-  writePosition().then(() => {
-    if (!stopped && !firstWriteDone) {
-      // First write failed silently — set broadcastStarted on next success
-    }
-    if (firstWriteDone) {
-      setDoc(docRef, { broadcastStarted: serverTimestamp() }, { merge: true });
-    }
-  });
+  writePosition();
 
   const interval = setInterval(async () => {
     if (stopped) return;
