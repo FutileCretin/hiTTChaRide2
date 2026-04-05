@@ -17,6 +17,7 @@ import { Colors } from '../../constants/colors';
 import { Avatar } from '../../components/Avatar';
 import { useAuth } from '../../hooks/useAuth';
 import { authenticateWithDevice, clearFirstLoginFlag } from '../../services/auth';
+import { getExpoPushToken } from '../../services/vehicleBroadcast';
 import { needsStewardConfirmation, recordStewardConfirmation } from '../../services/stewardCycle';
 import { StewardRecord } from '../../services/stewardCycle';
 import {
@@ -64,6 +65,8 @@ export default function HomeScreen() {
     const success = await authenticateWithDevice();
     if (success) {
       setLocked(false);
+      // Request notification permission once on unlock — needed for the ding bell feature
+      getExpoPushToken();
       if ((profile as any)?.firstLogin && (profile?.isShopSteward || profile?.isAdmin)) {
         setShowStewardWelcome(true);
         await clearFirstLoginFlag(profile!.badgeNumber);
