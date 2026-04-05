@@ -15,35 +15,27 @@ export interface VehicleLocation {
   secsSinceReport: number; // Seconds since last GPS ping
 }
 
-// Fetch the live location of a specific vehicle by bus number
+// Fetch the live location of a specific vehicle by bus number.
+// Uses the single-vehicle lookup command which works for ALL vehicles
+// including deadheads — not just in-service buses on a route.
 export async function fetchVehicleLocation(busNumber: string): Promise<VehicleLocation | null> {
   try {
-    // Get all vehicles (TTC API doesn't support single-vehicle lookup)
-    const url = `${TTC_API_BASE}?command=vehicleLocations&a=${AGENCY}&t=0`;
+    const url = `${TTC_API_BASE}?command=vehicleLocation&a=${AGENCY}&v=${busNumber}`;
     const response = await fetch(url);
     const data = await response.json();
 
-    // The API returns { vehicle: [...] } or { vehicle: {...} } for a single result
-    let vehicles = data?.vehicle;
-    if (!vehicles) return null;
-    if (!Array.isArray(vehicles)) vehicles = [vehicles];
-
-    // Find the specific bus by its ID (bus number)
-    const match = vehicles.find(
-      (v: any) => String(v.id) === String(busNumber)
-    );
-
-    if (!match) return null;
+    const v = data?.vehicle;
+    if (!v || !v.lat) return null;
 
     return {
-      id: String(match.id),
-      lat: parseFloat(match.lat),
-      lon: parseFloat(match.lon),
-      heading: parseFloat(match.heading ?? 0),
-      speedKmH: parseFloat(match.speedKmHr ?? 0),
-      routeTag: String(match.routeTag ?? ''),
-      dirTag: String(match.dirTag ?? ''),
-      secsSinceReport: parseInt(match.secsSinceReport ?? 0, 10),
+      id:              String(v.id ?? busNumber),
+      lat:             parseFloat(v.lat),
+      lon:             parseFloat(v.lon),
+      heading:         parseFloat(v.heading ?? 0),
+      speedKmH:        parseFloat(v.speedKmHr ?? 0),
+      routeTag:        String(v.routeTag ?? ''),
+      dirTag:          String(v.dirTag ?? ''),
+      secsSinceReport: parseInt(v.secsSinceReport ?? 0, 10),
     };
   } catch (error) {
     console.error('TTC API error:', error);
