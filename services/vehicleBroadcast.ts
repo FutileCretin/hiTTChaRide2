@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { fetchVehicleLocation } from './ttcApi';
+import * as Notifications from 'expo-notifications';
 
 export const BROADCAST_DURATION_MS = 60 * 60 * 1000; // 1 hour
 export const POLL_INTERVAL_MS      = 5000;            // poll TTC feed every 5 s
@@ -30,8 +31,39 @@ export interface BroadcastVehicle {
   speedKmH:         number;
   routeTag:         string;
   secsSinceReport:  number;
+  expoPushToken?:   string;
   broadcastStarted: Timestamp;
   lastUpdated:      Timestamp;
+}
+
+// Get this device's Expo push token (returns null if permission denied)
+export async function getExpoPushToken(): Promise<string | null> {
+  try {
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') return null;
+    const token = await Notifications.getExpoPushTokenAsync();
+    return token.data;
+  } catch {
+    return null;
+  }
+}
+
+// Send a ding notification to a broadcasting driver
+export async function sendDing(
+  expoPushToken: string,
+  busNumber: string,
+): Promise<void> {
+  await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to:    expoPushToken,
+      title: '🔔 Someone needs a ride!',
+      body:  `A coworker near Bus #${busNumber} is requesting a pickup.`,
+      sound: 'default',
+      priority: 'high',
+    }),
+  });
 }
 
 export type AvatarStyle =
@@ -65,6 +97,9 @@ export function startBroadcast(
   let   stopped            = false;
   let   firstWriteDone     = false;
   const broadcastStartTime = Date.now();
+  // Get push token once at start so riders can ding this driver
+  let   pushToken: string | null = null;
+  getExpoPushToken().then(t => { pushToken = t; });
 
   const writePosition = async () => {
     const location = await fetchVehicleLocation(busNumber);
@@ -93,9 +128,8 @@ export function startBroadcast(
         routeTag:        location.routeTag,
         secsSinceReport: location.secsSinceReport,
         lastUpdated:     serverTimestamp(),
-        // broadcastStarted is written on the very first write so the
-        // viewer's filter passes immediately — no second-write delay
         ...(isFirst ? { broadcastStarted: serverTimestamp() } : {}),
+        ...(pushToken   ? { expoPushToken: pushToken }        : {}),
       },
       { merge: true }
     );

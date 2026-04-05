@@ -18,6 +18,7 @@ import {
   subscribeToActiveBroadcasts,
   BroadcastVehicle,
   POLL_INTERVAL_MS,
+  sendDing,
 } from '../../services/vehicleBroadcast';
 import { Avatar } from '../../components/Avatar';
 
@@ -69,9 +70,10 @@ const CIRCLE = 40; // outer diameter in dp
 
 export default function TrackScreen() {
   const [displayed, setDisplayed] = useState<DisplayVehicle[]>([]);
-  const [, setTick] = useState(0);          // drives re-render every 100 ms
+  const [, setTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<DisplayVehicle | null>(null);
+  const [dingSent, setDingSent] = useState(false);
 
   const mapRef    = useRef<MapView>(null);
   const interpRef = useRef<Map<string, InterpState>>(new Map());
@@ -166,7 +168,15 @@ export default function TrackScreen() {
     return () => unsub();
   }, []);
 
+  const handleDing = async () => {
+    if (!selected?.expoPushToken || dingSent) return;
+    setDingSent(true);
+    await sendDing(selected.expoPushToken, selected.busNumber);
+    setTimeout(() => setDingSent(false), 10000); // 10s cooldown
+  };
+
   const focusVehicle = (vehicle: DisplayVehicle) => {
+    setDingSent(false);
     setSelected(vehicle);
     mapRef.current?.animateToRegion(
       {
@@ -275,7 +285,18 @@ export default function TrackScreen() {
               </Text>
             </View>
           </View>
-          <Text style={styles.infoDismiss}>Tap to dismiss</Text>
+          {selected.expoPushToken && (
+            <TouchableOpacity
+              style={[styles.dingBtn, dingSent && styles.dingBtnSent]}
+              onPress={handleDing}
+              disabled={dingSent}
+            >
+              <Text style={styles.dingBtnText}>
+                {dingSent ? '✓ Ding sent!' : '🔔 Ding Driver'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <Text style={styles.infoDismiss}>Tap card to dismiss</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -369,8 +390,14 @@ const styles = StyleSheet.create({
   infoFreshness: { fontSize: 11, marginTop: 2 },
   infoFresh:     { color: Colors.success },
   infoStale:     { color: '#F59E0B' },
+  dingBtn: {
+    backgroundColor: Colors.primary, borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center', marginTop: 16,
+  },
+  dingBtnSent: { backgroundColor: Colors.success },
+  dingBtnText: { color: Colors.white, fontWeight: '800', fontSize: 16 },
   infoDismiss: {
-    color: Colors.grayDark, fontSize: 11, textAlign: 'center', marginTop: 12,
+    color: Colors.grayDark, fontSize: 11, textAlign: 'center', marginTop: 10,
   },
 });
 
