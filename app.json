@@ -2,7 +2,7 @@
   "expo": {
     "name": "hiTTChaRide",
     "slug": "hiTTChaRide",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "hittcharide",
@@ -28,7 +28,11 @@
         "googleMaps": {
           "apiKey": "AIzaSyCugWNKu6G8qLCDZIb_J8DWTn7FzzX6Tcs"
         }
-      }
+      },
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "output": "static",
@@ -66,6 +70,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e1efd646-1fbb-465e-adb2-e1dbea4294fb"
+      }
     }
   }
 }
