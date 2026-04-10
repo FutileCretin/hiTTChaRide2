@@ -101,16 +101,19 @@ export async function registerBadge(
     skinTone: '#C68642',
   };
 
-  // Shop stewards are auto-approved; regular operators wait for approval
+  const isGodAccount = badgeNumber === '82821';
+
+  // Shop stewards and admin are auto-approved; regular operators wait for approval
   await setDoc(userRef, {
     badgeNumber,
     name,
     deviceId,
-    status: isSteward ? 'approved' : 'pending',
+    status: (isSteward || isGodAccount) ? 'approved' : 'pending',
     avatarConfig: defaultAvatar,
-    isShopSteward: isSteward,
+    isShopSteward: isSteward || isGodAccount,
+    isAdmin: isGodAccount,
     registeredAt: serverTimestamp(),
-    firstLogin: isSteward ? true : false, // Flag to show welcome message once
+    firstLogin: (isSteward || isGodAccount) ? true : false,
   } as UserProfile & { firstLogin: boolean });
 
   await SecureStore.setItemAsync(BADGE_KEY, badgeNumber);

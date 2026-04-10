@@ -132,12 +132,10 @@ export default function HomeScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.push('/(main)/profile')}>
-          <Avatar
-            config={profile?.avatarConfig ?? { style: 'conductor', skinTone: Colors.skinTones.lightBrown }}
-            size={56}
-          />
-        </TouchableOpacity>
+        <Avatar
+          config={profile?.avatarConfig ?? { style: 'conductor', skinTone: Colors.skinTones.lightBrown }}
+          size={56}
+        />
         <View style={styles.headerText}>
           <Text style={styles.greeting}>Welcome back</Text>
           <Text style={styles.name}>{profile?.name ?? 'Operator'}</Text>
@@ -189,6 +187,7 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
         )}
+
       </View>
 
       {/* ── MODAL 1: Appointment offer (full-screen) ── */}
@@ -364,6 +363,7 @@ const styles = StyleSheet.create({
   trackButton:   { backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.border },
   myVehicleButton: { backgroundColor: Colors.primary },
   stewardButton: { backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.primary },
+  membersButton: { backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.border },
   actionIcon:    { fontSize: 36, marginBottom: 12 },
   actionTitle:   { color: Colors.white, fontSize: 22, fontWeight: '800', marginBottom: 8 },
   actionDesc:    { color: 'rgba(255,255,255,0.7)', fontSize: 14, lineHeight: 20 },

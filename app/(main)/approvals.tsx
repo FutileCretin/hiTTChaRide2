@@ -11,8 +11,10 @@ import {
   Alert,
   Modal,
   ScrollView,
+  Switch,
 } from 'react-native';
 import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import {
   collection,
   onSnapshot,
@@ -20,6 +22,7 @@ import {
   where,
   updateDoc,
   doc,
+  getDocs,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -49,6 +52,26 @@ export default function ApprovalsScreen() {
   const [operators, setOperators]           = useState<ApprovedOperator[]>([]);
   const [loadingOperators, setLoadingOperators] = useState(false);
   const [appointing, setAppointing]         = useState<string | null>(null);
+
+  // Notification toggle
+  const [notifEnabled, setNotifEnabled] = useState(true);
+
+  useEffect(() => {
+    SecureStore.getItemAsync('approvalNotifications').then(val => {
+      if (val !== null) setNotifEnabled(val === 'true');
+    });
+  }, []);
+
+  const toggleNotif = (val: boolean) => {
+    setNotifEnabled(val);
+    SecureStore.setItemAsync('approvalNotifications', String(val));
+  };
+
+  // Manage users state
+  const [showManage, setShowManage]         = useState(false);
+  const [allUsers, setAllUsers]             = useState<PendingUser[]>([]);
+  const [loadingUsers, setLoadingUsers]     = useState(false);
+  const [suspending, setSuspending]         = useState<string | null>(null);
 
   // Live pending approvals
   useEffect(() => {
@@ -154,6 +177,47 @@ export default function ApprovalsScreen() {
     }
   };
 
+  // Open manage users modal — load all non-pending users
+  const openManageModal = async () => {
+    setShowManage(true);
+    setLoadingUsers(true);
+    try {
+      const snap = await getDocs(query(collection(db, 'users'), where('status', '==', 'approved')));
+      const users: PendingUser[] = snap.docs
+        .map((d) => d.data() as PendingUser)
+        .filter((u) => u.badgeNumber !== profile?.badgeNumber) // don't show yourself
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setAllUsers(users);
+    } catch {
+      Alert.alert('Error', 'Could not load users.');
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const confirmSuspend = (user: PendingUser) => {
+    Alert.alert(
+      'Remove User',
+      `Remove ${user.name} (Badge #${user.badgeNumber})? They will not be able to log in until re-approved.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => doSuspend(user.badgeNumber) },
+      ]
+    );
+  };
+
+  const doSuspend = async (badgeNumber: string) => {
+    setSuspending(badgeNumber);
+    try {
+      await updateDoc(doc(db, 'users', badgeNumber), { status: 'pending' });
+      setAllUsers((prev) => prev.filter((u) => u.badgeNumber !== badgeNumber));
+    } catch {
+      Alert.alert('Error', 'Could not remove user. Please try again.');
+    } finally {
+      setSuspending(null);
+    }
+  };
+
   const formatDate = (ts: Timestamp) =>
     ts.toDate().toLocaleDateString('en-CA', {
       month: 'short', day: 'numeric', year: 'numeric',
@@ -208,6 +272,17 @@ export default function ApprovalsScreen() {
         )}
       </View>
 
+      {/* Notification toggle */}
+      <View style={styles.notifRow}>
+        <Text style={styles.notifLabel}>🔔 Notify me on new approvals</Text>
+        <Switch
+          value={notifEnabled}
+          onValueChange={toggleNotif}
+          trackColor={{ false: Colors.grayDark, true: Colors.primary }}
+          thumbColor={Colors.white}
+        />
+      </View>
+
       {/* Appoint Shop Steward button */}
       <View style={styles.appointSection}>
         <TouchableOpacity style={styles.appointBtn} onPress={openAppointModal}>
@@ -217,6 +292,17 @@ export default function ApprovalsScreen() {
             <Text style={styles.appointBtnSub}>Select an approved operator to take the role</Text>
           </View>
         </TouchableOpacity>
+
+        {/* Manage Users — shop stewards and admin */}
+        {(profile?.isShopSteward || profile?.isAdmin) && (
+          <TouchableOpacity style={[styles.appointBtn, styles.manageBtn]} onPress={openManageModal}>
+            <Text style={styles.appointBtnIcon}>🗂</Text>
+            <View>
+              <Text style={styles.appointBtnTitle}>Manage Users</Text>
+              <Text style={styles.appointBtnSub}>Remove or suspend approved operators</Text>
+            </View>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Pending list */}
@@ -240,6 +326,49 @@ export default function ApprovalsScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      {/* ── Manage Users modal ── */}
+      <Modal visible={showManage} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Manage Users</Text>
+              <TouchableOpacity onPress={() => setShowManage(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingUsers ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator color={Colors.primary} />
+                <Text style={styles.loadingText}>Loading users...</Text>
+              </View>
+            ) : allUsers.length === 0 ? (
+              <Text style={styles.noOperatorsText}>No approved users found.</Text>
+            ) : (
+              <ScrollView style={styles.operatorList} showsVerticalScrollIndicator={false}>
+                {allUsers.map((u) => (
+                  <View key={u.badgeNumber} style={styles.manageRow}>
+                    <View>
+                      <Text style={styles.operatorName}>{u.name}</Text>
+                      <Text style={styles.operatorBadge}>Badge #{u.badgeNumber}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.removeBtn, suspending === u.badgeNumber && styles.btnDisabled]}
+                      onPress={() => confirmSuspend(u)}
+                      disabled={suspending !== null}
+                    >
+                      {suspending === u.badgeNumber
+                        ? <ActivityIndicator color={Colors.white} size="small" />
+                        : <Text style={styles.removeBtnText}>Remove</Text>}
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Appoint modal ── */}
       <Modal visible={showAppoint} transparent animationType="slide">
@@ -308,6 +437,13 @@ const styles = StyleSheet.create({
   },
   countText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
 
+  notifRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  notifLabel: { color: Colors.textSecondary, fontSize: 14 },
+
   // Appoint section
   appointSection: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   appointBtn: {
@@ -364,6 +500,16 @@ const styles = StyleSheet.create({
   modalClose:  { color: Colors.textSecondary, fontSize: 20, paddingHorizontal: 4 },
   modalLoading: { alignItems: 'center', gap: 10, paddingVertical: 20 },
   noOperatorsText: { color: Colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', padding: 16 },
+  manageBtn: { marginTop: 10, borderColor: Colors.danger },
+  manageRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  removeBtn: {
+    backgroundColor: Colors.danger, borderRadius: 10,
+    paddingHorizontal: 16, paddingVertical: 8,
+  },
+  removeBtnText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
   operatorList: { flexGrow: 0 },
   operatorRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

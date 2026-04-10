@@ -14,33 +14,69 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '../../constants/colors';
-import { startBroadcast, stopBroadcast, BROADCAST_DURATION_MS, GarageCode } from '../../services/vehicleBroadcast';
+import { startBroadcast, BROADCAST_DURATION_MS, GarageCode } from '../../services/vehicleBroadcast';
 import { getStoredBadge, getUserProfile, UserProfile } from '../../services/auth';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../../services/firebase';
 
 const GARAGES: GarageCode[] = ['AGRA', 'QSGA', 'MDGA', 'WLGA', 'EGGA', 'BRGA', 'MLGA', 'MNGA'];
+const SCHEDULE_DELAY_MS = 30 * 60 * 1000; // 30 minutes
+const ADMIN_BADGE = '82821';
+
+type ScreenMode = 'input' | 'scheduled' | 'broadcasting';
 
 export default function FollowMyBusScreen() {
-  const [busNumber, setBusNumber] = useState('');
+  const [mode, setMode]                     = useState<ScreenMode>('input');
+  const [busNumber, setBusNumber]           = useState('');
   const [selectedGarage, setSelectedGarage] = useState<GarageCode | null>(null);
-  const [broadcasting, setBroadcasting] = useState(false);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [timeLeft, setTimeLeft] = useState(BROADCAST_DURATION_MS);
-  const [currentLat, setCurrentLat] = useState<number | null>(null);
-  const [currentLon, setCurrentLon] = useState<number | null>(null);
+  const [profile, setProfile]               = useState<UserProfile | null>(null);
+  const [broadcastTimeLeft, setBroadcastTimeLeft] = useState(BROADCAST_DURATION_MS);
+  const [scheduleTimeLeft, setScheduleTimeLeft]   = useState(SCHEDULE_DELAY_MS);
+  const [currentLat, setCurrentLat]         = useState<number | null>(null);
+  const [currentLon, setCurrentLon]         = useState<number | null>(null);
 
-  const stopBroadcastFn = useRef<(() => void) | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const stopBroadcastFn   = useRef<(() => void) | null>(null);
+  const broadcastTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scheduleTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pulseAnim         = useRef(new Animated.Value(1)).current;
+  const busNumberRef      = useRef(busNumber);
+  const profileRef        = useRef(profile);
+  const garageRef         = useRef(selectedGarage);
+
+  // Keep refs in sync with state so the schedule timer can access fresh values
+  useEffect(() => { busNumberRef.current = busNumber; }, [busNumber]);
+  useEffect(() => { profileRef.current = profile; }, [profile]);
+  useEffect(() => { garageRef.current = selectedGarage; }, [selectedGarage]);
 
   useEffect(() => {
     getStoredBadge().then((badge) => {
-      if (badge) getUserProfile(badge).then(setProfile);
+      if (!badge) return;
+      getUserProfile(badge).then(async (p) => {
+        setProfile(p);
+        // Check if this user already has an active broadcast (skip for admin)
+        if (p && p.badgeNumber !== ADMIN_BADGE) {
+          const snap = await getDocs(
+            query(collection(db, 'activeBroadcasts'), where('badgeNumber', '==', badge))
+          );
+          if (!snap.empty) {
+            const data = snap.docs[0].data();
+            setBusNumber(data.busNumber ?? '');
+            setSelectedGarage(data.garageCode ?? null);
+            // Show broadcasting view — remaining time estimated from broadcastStarted
+            const started = data.broadcastStarted?.toMillis?.() ?? Date.now();
+            const elapsed = Date.now() - started;
+            const remaining = Math.max(0, BROADCAST_DURATION_MS - elapsed);
+            setBroadcastTimeLeft(remaining);
+            setMode('broadcasting');
+          }
+        }
+      });
     });
   }, []);
 
   // Pulsing animation
   useEffect(() => {
-    if (broadcasting) {
+    if (mode === 'broadcasting') {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
@@ -51,28 +87,62 @@ export default function FollowMyBusScreen() {
       pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
     }
-  }, [broadcasting]);
+  }, [mode]);
 
-  // Countdown timer
+  // Broadcast countdown timer
   useEffect(() => {
-    if (broadcasting) {
+    if (mode === 'broadcasting') {
       const startTime = Date.now();
-      timerRef.current = setInterval(() => {
+      const initialLeft = broadcastTimeLeft;
+      broadcastTimerRef.current = setInterval(() => {
         const elapsed = Date.now() - startTime;
-        const remaining = BROADCAST_DURATION_MS - elapsed;
+        const remaining = initialLeft - elapsed;
         if (remaining <= 0) {
-          clearInterval(timerRef.current!);
-          setTimeLeft(0);
+          clearInterval(broadcastTimerRef.current!);
+          setBroadcastTimeLeft(0);
         } else {
-          setTimeLeft(remaining);
+          setBroadcastTimeLeft(remaining);
         }
       }, 1000);
     } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-      setTimeLeft(BROADCAST_DURATION_MS);
+      if (broadcastTimerRef.current) clearInterval(broadcastTimerRef.current);
     }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [broadcasting]);
+    return () => { if (broadcastTimerRef.current) clearInterval(broadcastTimerRef.current); };
+  }, [mode]);
+
+  // Schedule countdown timer
+  useEffect(() => {
+    if (mode === 'scheduled') {
+      setScheduleTimeLeft(SCHEDULE_DELAY_MS);
+      const startTime = Date.now();
+      scheduleTimerRef.current = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const remaining = SCHEDULE_DELAY_MS - elapsed;
+        if (remaining <= 0) {
+          clearInterval(scheduleTimerRef.current!);
+          setScheduleTimeLeft(0);
+          // Use refs to avoid stale closure — access fresh busNumber/profile/garage
+          const trimmed = busNumberRef.current.trim();
+          const p = profileRef.current;
+          if (!trimmed || !p) return;
+          setBroadcastTimeLeft(BROADCAST_DURATION_MS);
+          setMode('broadcasting');
+          const stop = startBroadcast(
+            trimmed, p.badgeNumber, p.name, p.avatarConfig, garageRef.current,
+            (lat, lon) => { setCurrentLat(lat); setCurrentLon(lon); },
+            () => { stopBroadcastFn.current = null; setMode('input'); Alert.alert('Broadcast Ended', 'Your 1-hour broadcast session has ended.', [{ text: 'OK', onPress: () => router.replace('/(main)/home') }]); },
+            () => { stopBroadcastFn.current = null; setMode('input'); Alert.alert('Bus Not Found', `Bus #${trimmed} isn't showing up in the TTC system right now.`); }
+          );
+          stopBroadcastFn.current = stop;
+        } else {
+          setScheduleTimeLeft(remaining);
+        }
+      }, 1000);
+    } else {
+      if (scheduleTimerRef.current) clearInterval(scheduleTimerRef.current);
+    }
+    return () => { if (scheduleTimerRef.current) clearInterval(scheduleTimerRef.current); };
+  }, [mode]);
 
   const handleStart = () => {
     const trimmed = busNumber.trim();
@@ -82,7 +152,8 @@ export default function FollowMyBusScreen() {
     }
     if (!profile) return;
 
-    setBroadcasting(true);
+    setBroadcastTimeLeft(BROADCAST_DURATION_MS);
+    setMode('broadcasting');
 
     const stop = startBroadcast(
       trimmed,
@@ -95,8 +166,8 @@ export default function FollowMyBusScreen() {
         setCurrentLon(lon);
       },
       () => {
-        setBroadcasting(false);
         stopBroadcastFn.current = null;
+        setMode('input');
         Alert.alert(
           'Broadcast Ended',
           'Your 1-hour broadcast session has ended.',
@@ -104,8 +175,8 @@ export default function FollowMyBusScreen() {
         );
       },
       () => {
-        setBroadcasting(false);
         stopBroadcastFn.current = null;
+        setMode('input');
         Alert.alert(
           'Bus Not Found',
           `Bus #${trimmed} isn't showing up in the TTC system right now.\n\nThis can happen if the bus transponder is off or the vehicle is out of service. Try again in a moment, or check that you entered the vehicle number correctly.`
@@ -114,6 +185,15 @@ export default function FollowMyBusScreen() {
     );
 
     stopBroadcastFn.current = stop;
+  };
+
+  const handleSchedule = () => {
+    const trimmed = busNumber.trim();
+    if (!trimmed) {
+      Alert.alert('Enter bus number', 'Please enter your bus number first.');
+      return;
+    }
+    setMode('scheduled');
   };
 
   const handleStop = () => {
@@ -128,9 +208,24 @@ export default function FollowMyBusScreen() {
           onPress: () => {
             stopBroadcastFn.current?.();
             stopBroadcastFn.current = null;
-            setBroadcasting(false);
+            setMode('input');
             router.replace('/(main)/home');
           },
+        },
+      ]
+    );
+  };
+
+  const handleCancelSchedule = () => {
+    Alert.alert(
+      'Cancel Scheduled Broadcast',
+      'Are you sure you want to cancel the scheduled broadcast?',
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Cancel Broadcast',
+          style: 'destructive',
+          onPress: () => setMode('input'),
         },
       ]
     );
@@ -143,8 +238,47 @@ export default function FollowMyBusScreen() {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
+  // ── Scheduled (30-min countdown) view ────────────────────
+  if (mode === 'scheduled') {
+    return (
+      <View style={styles.broadcastContainer}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Text style={styles.backBtnText}>← Back</Text>
+        </TouchableOpacity>
+
+        <Animated.View style={[styles.pulseCircle, styles.pulseCircleScheduled]}>
+          <View style={[styles.innerCircle, styles.innerCircleScheduled]}>
+            <Text style={styles.broadcastIcon}>⏱</Text>
+          </View>
+        </Animated.View>
+
+        <Text style={[styles.broadcastTitle, styles.scheduledTitle]}>Starting Soon</Text>
+        <Text style={styles.broadcastBusNum}>Bus #{busNumber}</Text>
+
+        {selectedGarage && (
+          <View style={styles.garageBadgeLarge}>
+            <Text style={styles.garageBadgeLargeText}>{selectedGarage}</Text>
+          </View>
+        )}
+
+        <View style={styles.timerContainer}>
+          <Text style={styles.timerLabel}>Broadcast starts in</Text>
+          <Text style={styles.timerValue}>{formatTime(scheduleTimeLeft)}</Text>
+        </View>
+
+        <Text style={styles.backgroundNote}>
+          Keep the app open. Broadcasting will begin automatically when the timer ends.
+        </Text>
+
+        <TouchableOpacity style={styles.stopButton} onPress={handleCancelSchedule}>
+          <Text style={styles.stopButtonText}>Cancel Scheduled Broadcast</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   // ── Broadcasting active view ──────────────────────────────
-  if (broadcasting) {
+  if (mode === 'broadcasting') {
     return (
       <View style={styles.broadcastContainer}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -168,7 +302,7 @@ export default function FollowMyBusScreen() {
 
         <View style={styles.timerContainer}>
           <Text style={styles.timerLabel}>Time remaining</Text>
-          <Text style={styles.timerValue}>{formatTime(timeLeft)}</Text>
+          <Text style={styles.timerValue}>{formatTime(broadcastTimeLeft)}</Text>
         </View>
 
         {currentLat !== null && (
@@ -252,6 +386,14 @@ export default function FollowMyBusScreen() {
         disabled={!busNumber.trim()}
       >
         <Text style={styles.startButtonText}>Start Broadcasting</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.scheduleButton, !busNumber.trim() && styles.startButtonDisabled]}
+        onPress={handleSchedule}
+        disabled={!busNumber.trim()}
+      >
+        <Text style={styles.scheduleButtonText}>⏱  Broadcast in 30 min</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -362,6 +504,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 18,
     alignItems: 'center',
+    marginBottom: 12,
   },
   startButtonDisabled: {
     opacity: 0.4,
@@ -371,7 +514,20 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
   },
-  // Broadcasting state
+  scheduleButton: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    paddingVertical: 18,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  scheduleButtonText: {
+    color: Colors.primary,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  // Broadcasting / Scheduled state
   broadcastContainer: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -389,6 +545,9 @@ const styles = StyleSheet.create({
     marginTop: 48,
     marginBottom: 8,
   },
+  pulseCircleScheduled: {
+    backgroundColor: 'rgba(21,101,192,0.2)',
+  },
   innerCircle: {
     width: 100,
     height: 100,
@@ -399,6 +558,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.broadcasting,
   },
+  innerCircleScheduled: {
+    borderColor: Colors.primary,
+    backgroundColor: 'rgba(21,101,192,0.15)',
+  },
   broadcastIcon: {
     fontSize: 40,
   },
@@ -407,6 +570,9 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '800',
     marginTop: 16,
+  },
+  scheduledTitle: {
+    color: Colors.primary,
   },
   broadcastBusNum: {
     color: Colors.white,

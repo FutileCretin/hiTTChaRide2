@@ -266,7 +266,6 @@ export default function TrackScreen() {
           <View style={styles.infoRow}>
             <Avatar config={selected.avatarConfig} size={52} />
             <View style={styles.infoText}>
-              <Text style={styles.infoName}>{selected.operatorName}</Text>
               <Text style={styles.infoBadge}>Badge #{selected.badgeNumber}</Text>
               <Text style={styles.infoBus}>Bus #{selected.busNumber}</Text>
               {selected.garage ? (

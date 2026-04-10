@@ -44,30 +44,11 @@ export async function fetchVehicleLocation(busNumber: string): Promise<VehicleLo
 }
 
 // Fetch locations for a list of bus numbers (for the Track Vehicle map)
+// Uses individual lookups so deadhead buses are included
 export async function fetchMultipleVehicles(busNumbers: string[]): Promise<VehicleLocation[]> {
   try {
-    const url = `${TTC_API_BASE}?command=vehicleLocations&a=${AGENCY}&t=0`;
-    const response = await fetch(url);
-    const data = await response.json();
-
-    let vehicles = data?.vehicle;
-    if (!vehicles) return [];
-    if (!Array.isArray(vehicles)) vehicles = [vehicles];
-
-    const ids = new Set(busNumbers.map(String));
-
-    return vehicles
-      .filter((v: any) => ids.has(String(v.id)))
-      .map((v: any) => ({
-        id: String(v.id),
-        lat: parseFloat(v.lat),
-        lon: parseFloat(v.lon),
-        heading: parseFloat(v.heading ?? 0),
-        speedKmH: parseFloat(v.speedKmHr ?? 0),
-        routeTag: String(v.routeTag ?? ''),
-        dirTag: String(v.dirTag ?? ''),
-        secsSinceReport: parseInt(v.secsSinceReport ?? 0, 10),
-      }));
+    const results = await Promise.all(busNumbers.map(n => fetchVehicleLocation(n)));
+    return results.filter((v): v is VehicleLocation => v !== null);
   } catch (error) {
     console.error('TTC API error (multi):', error);
     return [];
