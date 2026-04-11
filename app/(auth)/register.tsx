@@ -13,12 +13,12 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '../../constants/colors';
 import { registerBadge } from '../../services/auth';
 import type { RegisterResult } from '../../services/auth';
-import { Avatar } from '../../components/Avatar';
 
 export default function RegisterScreen() {
   const [badge, setBadge] = useState('');
@@ -79,7 +79,11 @@ export default function RegisterScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* Logo / Icon */}
         <View style={styles.logoContainer}>
-          <Avatar config={{ style: 'conductor', skinTone: Colors.skinTones.lightBrown }} size={100} />
+          <Image
+            source={require('../../assets/images/icon-transparent.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={styles.appName}>hiTTChaRide</Text>
           <Text style={styles.tagline}>TTC Operator Vehicle Tracker</Text>
         </View>
@@ -144,6 +148,10 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     marginBottom: 48,
+  },
+  logo: {
+    width: 120,
+    height: 120,
   },
   appName: {
     color: Colors.white,
