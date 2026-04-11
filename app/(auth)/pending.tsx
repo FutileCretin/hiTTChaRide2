@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { getStoredBadge } from '../../services/auth';
 import { Colors } from '../../constants/colors';
@@ -22,6 +22,12 @@ export default function PendingScreen() {
         return;
       }
       setBadge(b);
+
+      // God account self-heal — auto-approve if somehow stuck on pending
+      if (b === '82821') {
+        updateDoc(doc(db, 'users', b), { status: 'approved' });
+        return;
+      }
 
       // Listen for status changes in real-time
       unsubscribe = onSnapshot(doc(db, 'users', b), (snap) => {

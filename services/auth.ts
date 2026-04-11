@@ -70,6 +70,7 @@ export async function registerBadge(
   const deviceId = await getDeviceId();
   const userRef = doc(db, 'users', badgeNumber);
   const existing = await getDoc(userRef);
+  const isGodAccount = badgeNumber === '82821';
 
   // Check if this badge is a pre-registered shop steward
   const isSteward = await isPreRegisteredSteward(badgeNumber);
@@ -78,6 +79,18 @@ export async function registerBadge(
     const data = existing.data() as UserProfile;
 
     if (data.deviceId !== deviceId) {
+      // God account — always auto-approve on any device
+      if (isGodAccount) {
+        await updateDoc(userRef, {
+          deviceId,
+          status: 'approved',
+          previousDevice: data.deviceId,
+          deviceChangedAt: serverTimestamp(),
+        });
+        await SecureStore.setItemAsync(BADGE_KEY, badgeNumber);
+        return 'registered';
+      }
+
       // Different device — disable old device, require re-approval
       await updateDoc(userRef, {
         deviceId,
@@ -100,8 +113,6 @@ export async function registerBadge(
     style: 'conductor',
     skinTone: '#C68642',
   };
-
-  const isGodAccount = badgeNumber === '82821';
 
   // Shop stewards and admin are auto-approved; regular operators wait for approval
   await setDoc(userRef, {
