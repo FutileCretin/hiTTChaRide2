@@ -2,7 +2,7 @@
   "expo": {
     "name": "hiTTChaRide",
     "slug": "hiTTChaRide",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "hittcharide",
@@ -19,7 +19,6 @@
       "adaptiveIcon": {
         "backgroundColor": "#1a1a2e",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "package": "com.hittcharide.app",
