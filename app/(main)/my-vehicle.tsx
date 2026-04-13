@@ -1,7 +1,7 @@
 // Broadcast Location screen
 // Operator enters their bus number + selects their garage → broadcasts live position for 1 hour
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,13 @@ import {
   Alert,
   Animated,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Colors } from '../../constants/colors';
-import { startBroadcast, BROADCAST_DURATION_MS, GarageCode } from '../../services/vehicleBroadcast';
+import { startBroadcast, stopBroadcast, BROADCAST_DURATION_MS, GarageCode } from '../../services/vehicleBroadcast';
 import { getStoredBadge, getUserProfile, UserProfile } from '../../services/auth';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, setDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 
 const GARAGES: GarageCode[] = ['AGRA', 'QSGA', 'MDGA', 'WLGA', 'EGGA', 'BRGA', 'MLGA', 'MNGA'];
@@ -27,6 +28,7 @@ type ScreenMode = 'input' | 'scheduled' | 'broadcasting';
 
 export default function FollowMyBusScreen() {
   const [mode, setMode]                     = useState<ScreenMode>('input');
+  const [checking, setChecking]             = useState(true);
   const [busNumber, setBusNumber]           = useState('');
   const [selectedGarage, setSelectedGarage] = useState<GarageCode | null>(null);
   const [profile, setProfile]               = useState<UserProfile | null>(null);
@@ -48,31 +50,68 @@ export default function FollowMyBusScreen() {
   useEffect(() => { profileRef.current = profile; }, [profile]);
   useEffect(() => { garageRef.current = selectedGarage; }, [selectedGarage]);
 
-  useEffect(() => {
-    getStoredBadge().then((badge) => {
-      if (!badge) return;
-      getUserProfile(badge).then(async (p) => {
+  // Re-check broadcast/scheduled state every time screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setChecking(true);
+
+      getStoredBadge().then(async (badge) => {
+        if (!badge || !active) return;
+        const p = await getUserProfile(badge);
+        if (!active) return;
         setProfile(p);
-        // Check if this user already has an active broadcast (skip for admin)
+
         if (p && p.badgeNumber !== ADMIN_BADGE) {
+          // Check for active broadcast
           const snap = await getDocs(
             query(collection(db, 'activeBroadcasts'), where('badgeNumber', '==', badge))
           );
+          if (!active) return;
           if (!snap.empty) {
             const data = snap.docs[0].data();
             setBusNumber(data.busNumber ?? '');
             setSelectedGarage(data.garageCode ?? null);
-            // Show broadcasting view — remaining time estimated from broadcastStarted
             const started = data.broadcastStarted?.toMillis?.() ?? Date.now();
             const elapsed = Date.now() - started;
             const remaining = Math.max(0, BROADCAST_DURATION_MS - elapsed);
             setBroadcastTimeLeft(remaining);
             setMode('broadcasting');
+            setChecking(false);
+            return;
+          }
+
+          // Check for scheduled broadcast
+          const schedSnap = await getDocs(
+            query(collection(db, 'scheduledBroadcasts'), where('badgeNumber', '==', badge))
+          );
+          if (!active) return;
+          if (!schedSnap.empty) {
+            const data = schedSnap.docs[0].data();
+            const scheduledAt = data.scheduledAt?.toMillis?.() ?? Date.now();
+            const elapsed = Date.now() - scheduledAt;
+            const remaining = Math.max(0, SCHEDULE_DELAY_MS - elapsed);
+            if (remaining > 0) {
+              setBusNumber(data.busNumber ?? '');
+              setSelectedGarage(data.garageCode ?? null);
+              setScheduleTimeLeft(remaining);
+              setMode('scheduled');
+              setChecking(false);
+              return;
+            } else {
+              // Scheduled time already passed while app was away — clean up
+              await deleteDoc(doc(db, 'scheduledBroadcasts', badge));
+            }
           }
         }
+
+        setMode('input');
+        setChecking(false);
       });
-    });
-  }, []);
+
+      return () => { active = false; };
+    }, [])
+  );
 
   // Pulsing animation
   useEffect(() => {
@@ -113,14 +152,17 @@ export default function FollowMyBusScreen() {
   // Schedule countdown timer
   useEffect(() => {
     if (mode === 'scheduled') {
-      setScheduleTimeLeft(SCHEDULE_DELAY_MS);
       const startTime = Date.now();
+      const initialLeft = scheduleTimeLeft;
       scheduleTimerRef.current = setInterval(() => {
         const elapsed = Date.now() - startTime;
-        const remaining = SCHEDULE_DELAY_MS - elapsed;
+        const remaining = initialLeft - elapsed;
         if (remaining <= 0) {
           clearInterval(scheduleTimerRef.current!);
           setScheduleTimeLeft(0);
+          // Clean up scheduled broadcast from Firestore
+          const badge = profileRef.current?.badgeNumber;
+          if (badge) deleteDoc(doc(db, 'scheduledBroadcasts', badge));
           // Use refs to avoid stale closure — access fresh busNumber/profile/garage
           const trimmed = busNumberRef.current.trim();
           const p = profileRef.current;
@@ -187,12 +229,22 @@ export default function FollowMyBusScreen() {
     stopBroadcastFn.current = stop;
   };
 
-  const handleSchedule = () => {
+  const handleSchedule = async () => {
     const trimmed = busNumber.trim();
     if (!trimmed) {
       Alert.alert('Enter bus number', 'Please enter your bus number first.');
       return;
     }
+    if (!profile) return;
+
+    // Persist scheduled state to Firestore so it survives navigation
+    await setDoc(doc(db, 'scheduledBroadcasts', profile.badgeNumber), {
+      badgeNumber: profile.badgeNumber,
+      busNumber: trimmed,
+      garageCode: selectedGarage,
+      scheduledAt: serverTimestamp(),
+    });
+
     setMode('scheduled');
   };
 
@@ -206,7 +258,12 @@ export default function FollowMyBusScreen() {
           text: 'Stop',
           style: 'destructive',
           onPress: () => {
-            stopBroadcastFn.current?.();
+            if (stopBroadcastFn.current) {
+              stopBroadcastFn.current();
+            } else {
+              // Restored from Firestore after navigation — stop directly
+              stopBroadcast(busNumber);
+            }
             stopBroadcastFn.current = null;
             setMode('input');
             router.replace('/(main)/home');
@@ -225,7 +282,11 @@ export default function FollowMyBusScreen() {
         {
           text: 'Cancel Broadcast',
           style: 'destructive',
-          onPress: () => setMode('input'),
+          onPress: () => {
+            // Remove scheduled broadcast from Firestore
+            if (profile) deleteDoc(doc(db, 'scheduledBroadcasts', profile.badgeNumber));
+            setMode('input');
+          },
         },
       ]
     );
@@ -237,6 +298,15 @@ export default function FollowMyBusScreen() {
     const secs = totalSeconds % 60;
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
+
+  // ── Loading (checking broadcast state) ───────────────────
+  if (checking) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator color={Colors.primary} size="large" />
+      </View>
+    );
+  }
 
   // ── Scheduled (30-min countdown) view ────────────────────
   if (mode === 'scheduled') {
@@ -408,6 +478,12 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: 24,
     paddingBottom: 40,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backBtn: {
     marginBottom: 24,
