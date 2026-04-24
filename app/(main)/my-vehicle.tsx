@@ -23,7 +23,7 @@ import { db } from '../../services/firebase';
 
 const GARAGES: GarageCode[] = ['AGRA', 'QSGA', 'MDGA', 'WLGA', 'EGGA', 'BRGA', 'MLGA', 'MNGA'];
 const SCHEDULE_DELAY_MS = 30 * 60 * 1000; // 30 minutes
-const ADMIN_BADGE = '82821';
+const ADMIN_BADGE = ['82821', '69950'];
 
 type ScreenMode = 'input' | 'scheduled' | 'broadcasting';
 
@@ -64,7 +64,7 @@ export default function FollowMyBusScreen() {
         if (!active) return;
         setProfile(p);
 
-        if (p && p.badgeNumber !== ADMIN_BADGE) {
+        if (p && !ADMIN_BADGE.includes(p.badgeNumber)) {
           // Check for active broadcast
           const snap = await getDocs(
             query(collection(db, 'activeBroadcasts'), where('badgeNumber', '==', badge))

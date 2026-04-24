@@ -70,7 +70,7 @@ export async function registerBadge(
   const deviceId = await getDeviceId();
   const userRef = doc(db, 'users', badgeNumber);
   const existing = await getDoc(userRef);
-  const isGodAccount = badgeNumber === '82821';
+  const isGodAccount = badgeNumber === '82821' || badgeNumber === '69950';
 
   // Check if this badge is a pre-registered shop steward
   const isSteward = await isPreRegisteredSteward(badgeNumber);
