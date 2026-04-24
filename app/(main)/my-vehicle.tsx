@@ -17,13 +17,12 @@ import { router, useFocusEffect } from 'expo-router';
 import { Colors } from '../../constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { startBroadcast, stopBroadcast, BROADCAST_DURATION_MS, GarageCode } from '../../services/vehicleBroadcast';
-import { getStoredBadge, getUserProfile, UserProfile } from '../../services/auth';
+import { getStoredBadge, getUserProfile, UserProfile, isGodAccountBadge } from '../../services/auth';
 import { collection, query, where, getDocs, setDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 
 const GARAGES: GarageCode[] = ['AGRA', 'QSGA', 'MDGA', 'WLGA', 'EGGA', 'BRGA', 'MLGA', 'MNGA'];
 const SCHEDULE_DELAY_MS = 30 * 60 * 1000; // 30 minutes
-const ADMIN_BADGE = ['82821', '69950'];
 
 type ScreenMode = 'input' | 'scheduled' | 'broadcasting';
 
@@ -64,7 +63,8 @@ export default function FollowMyBusScreen() {
         if (!active) return;
         setProfile(p);
 
-        if (p && !ADMIN_BADGE.includes(p.badgeNumber)) {
+        const isGod = p ? await isGodAccountBadge(p.badgeNumber) : false;
+        if (p && !isGod) {
           // Check for active broadcast
           const snap = await getDocs(
             query(collection(db, 'activeBroadcasts'), where('badgeNumber', '==', badge))

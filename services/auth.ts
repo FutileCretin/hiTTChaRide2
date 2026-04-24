@@ -56,6 +56,12 @@ export type RegisterResult =
   | 'device_conflict'     // Existing badge, new device — needs re-approval
   | 'steward_device_conflict'; // Steward on new device — needs re-approval
 
+// Check if a badge is in the god accounts list in Firebase
+export async function isGodAccountBadge(badgeNumber: string): Promise<boolean> {
+  const snap = await getDoc(doc(db, 'godAccounts', badgeNumber));
+  return snap.exists();
+}
+
 // Check if a badge has been pre-registered as a shop steward by the admin
 export async function isPreRegisteredSteward(badgeNumber: string): Promise<boolean> {
   const snap = await getDoc(doc(db, 'preRegisteredStewards', badgeNumber));
@@ -70,7 +76,7 @@ export async function registerBadge(
   const deviceId = await getDeviceId();
   const userRef = doc(db, 'users', badgeNumber);
   const existing = await getDoc(userRef);
-  const isGodAccount = badgeNumber === '82821' || badgeNumber === '69950';
+  const isGodAccount = await isGodAccountBadge(badgeNumber);
 
   // Check if this badge is a pre-registered shop steward
   const isSteward = await isPreRegisteredSteward(badgeNumber);

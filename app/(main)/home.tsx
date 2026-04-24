@@ -133,9 +133,10 @@ export default function HomeScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Avatar
-          config={profile?.avatarConfig ?? { style: 'conductor', skinTone: Colors.skinTones.lightBrown }}
-          size={56}
+        <Image
+          source={require('../../assets/images/icon-transparent.png')}
+          style={{ width: 56, height: 56 }}
+          resizeMode="contain"
         />
         <View style={styles.headerText}>
           <Text style={styles.greeting}>Welcome back</Text>
