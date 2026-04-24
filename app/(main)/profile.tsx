@@ -12,12 +12,14 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Colors } from '../../constants/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, AvatarPicker } from '../../components/Avatar';
 import { useAuth } from '../../hooks/useAuth';
 import { updateAvatar, signOut } from '../../services/auth';
 import { AvatarConfig } from '../../services/vehicleBroadcast';
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { profile, reload } = useAuth();
   const [editingAvatar, setEditingAvatar] = useState(false);
   const [tempAvatar, setTempAvatar] = useState<AvatarConfig | null>(null);
@@ -62,7 +64,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}>
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
         <Text style={styles.backBtnText}>← Back</Text>
       </TouchableOpacity>

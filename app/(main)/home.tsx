@@ -11,8 +11,8 @@ import {
   ScrollView,
   Image,
 } from 'react-native';
-import { router } from 'expo-router';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/colors';
 import { Avatar } from '../../components/Avatar';
 import { useAuth } from '../../hooks/useAuth';
@@ -29,6 +29,7 @@ import {
 } from '../../services/stewardAppointment';
 
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
   const { state, profile, unlock, reload } = useAuth();
 
   useFocusEffect(
@@ -131,7 +132,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Avatar
           config={profile?.avatarConfig ?? { style: 'conductor', skinTone: Colors.skinTones.lightBrown }}
           size={56}

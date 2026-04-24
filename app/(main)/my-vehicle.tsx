@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Colors } from '../../constants/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { startBroadcast, stopBroadcast, BROADCAST_DURATION_MS, GarageCode } from '../../services/vehicleBroadcast';
 import { getStoredBadge, getUserProfile, UserProfile } from '../../services/auth';
 import { collection, query, where, getDocs, setDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
@@ -27,6 +28,7 @@ const ADMIN_BADGE = '82821';
 type ScreenMode = 'input' | 'scheduled' | 'broadcasting';
 
 export default function FollowMyBusScreen() {
+  const insets = useSafeAreaInsets();
   const [mode, setMode]                     = useState<ScreenMode>('input');
   const [checking, setChecking]             = useState(true);
   const [busNumber, setBusNumber]           = useState('');
@@ -311,7 +313,7 @@ export default function FollowMyBusScreen() {
   // ── Scheduled (30-min countdown) view ────────────────────
   if (mode === 'scheduled') {
     return (
-      <View style={styles.broadcastContainer}>
+      <View style={[styles.broadcastContainer, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Text style={styles.backBtnText}>← Back</Text>
         </TouchableOpacity>
@@ -350,7 +352,7 @@ export default function FollowMyBusScreen() {
   // ── Broadcasting active view ──────────────────────────────
   if (mode === 'broadcasting') {
     return (
-      <View style={styles.broadcastContainer}>
+      <View style={[styles.broadcastContainer, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Text style={styles.backBtnText}>← Back</Text>
         </TouchableOpacity>
@@ -397,7 +399,7 @@ export default function FollowMyBusScreen() {
 
   // ── Entry view ────────────────────────────────────────────
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 16 }]}>
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
         <Text style={styles.backBtnText}>← Back</Text>
       </TouchableOpacity>

@@ -14,6 +14,7 @@ import {
 import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
 import { router } from 'expo-router';
 import { Colors } from '../../constants/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   subscribeToActiveBroadcasts,
   BroadcastVehicle,
@@ -69,6 +70,7 @@ const deadReckon = (
 const CIRCLE = 40; // outer diameter in dp
 
 export default function TrackScreen() {
+  const insets = useSafeAreaInsets();
   const [displayed, setDisplayed] = useState<DisplayVehicle[]>([]);
   const [, setTick] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -234,11 +236,11 @@ export default function TrackScreen() {
       })}
 
       {/* ── UI chrome ───────────────────────────────────────────────────── */}
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+      <TouchableOpacity style={[styles.backBtn, { top: insets.top + 12 }]} onPress={() => router.back()}>
         <Text style={styles.backBtnText}>← Back</Text>
       </TouchableOpacity>
 
-      <View style={styles.countBadge}>
+      <View style={[styles.countBadge, { top: insets.top + 12 }]}>
         <Text style={styles.countText}>
           {displayed.length}{' '}
           {displayed.length === 1 ? 'operator' : 'operators'} live

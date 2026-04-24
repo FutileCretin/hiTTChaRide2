@@ -27,6 +27,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { Colors } from '../../constants/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../hooks/useAuth';
 import {
   createAppointment,
@@ -42,6 +43,7 @@ interface PendingUser {
 }
 
 export default function ApprovalsScreen() {
+  const insets = useSafeAreaInsets();
   const { profile } = useAuth();
   const [pending, setPending]         = useState<PendingUser[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -260,7 +262,7 @@ export default function ApprovalsScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Text style={styles.backBtnText}>← Back</Text>
         </TouchableOpacity>

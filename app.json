@@ -11,8 +11,12 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.hittcharide.app",
+      "config": {
+        "googleMapsApiKey": "AIzaSyCugWNKu6G8qLCDZIb_J8DWTn7FzzX6Tcs"
+      },
       "infoPlist": {
-        "NSFaceIDUsageDescription": "hiTTChaRide uses your device authentication to keep your account secure."
+        "NSFaceIDUsageDescription": "hiTTChaRide uses your device authentication to keep your account secure.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
