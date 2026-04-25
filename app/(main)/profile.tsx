@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
+import { Linking } from 'react-native';
 import { Colors } from '../../constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, AvatarPicker } from '../../components/Avatar';
@@ -160,7 +161,11 @@ export default function ProfileScreen() {
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>hiTTChaRide v1.0.0</Text>
+      <TouchableOpacity onPress={() => Linking.openURL('https://gist.github.com/FutileCretin/c9fab54f68bd629570dbc57831f7cb52')}>
+        <Text style={styles.privacyLink}>Privacy Policy</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.version}>hiTTChaRide v1.0.9</Text>
     </ScrollView>
   );
 }
@@ -348,10 +353,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 15,
   },
+  privacyLink: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 24,
+    textDecorationLine: 'underline',
+  },
   version: {
     color: Colors.grayDark,
     fontSize: 12,
     textAlign: 'center',
-    marginTop: 32,
+    marginTop: 8,
   },
 });
