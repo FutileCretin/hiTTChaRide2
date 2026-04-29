@@ -17,7 +17,7 @@ import { Colors } from '../../constants/colors';
 import { Avatar } from '../../components/Avatar';
 import { useAuth } from '../../hooks/useAuth';
 import { authenticateWithDevice, clearFirstLoginFlag } from '../../services/auth';
-import { getExpoPushToken } from '../../services/vehicleBroadcast';
+import { getExpoPushToken, savePushToken } from '../../services/vehicleBroadcast';
 import { needsStewardConfirmation, recordStewardConfirmation } from '../../services/stewardCycle';
 import { StewardRecord } from '../../services/stewardCycle';
 import {
@@ -66,8 +66,10 @@ export default function HomeScreen() {
     const success = await authenticateWithDevice();
     if (success) {
       setLocked(false);
-      // Request notification permission once on unlock — needed for the ding bell feature
-      getExpoPushToken();
+      // Request notification permission once on unlock, save token for push notifications
+      getExpoPushToken().then(token => {
+        if (token && profile?.badgeNumber) savePushToken(profile.badgeNumber, token);
+      });
       if ((profile as any)?.firstLogin && (profile?.isShopSteward || profile?.isAdmin)) {
         setShowStewardWelcome(true);
         await clearFirstLoginFlag(profile!.badgeNumber);
@@ -149,7 +151,7 @@ export default function HomeScreen() {
       </View>
 
       {/* Main action buttons */}
-      <View style={styles.buttonSection}>
+      <ScrollView style={styles.buttonSection} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         <Text style={styles.sectionTitle}>What would you like to do?</Text>
 
         <TouchableOpacity
@@ -190,7 +192,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-      </View>
+      </ScrollView>
 
       {/* ── MODAL 1: Appointment offer (full-screen) ── */}
       <Modal visible={appointmentOffer !== null} transparent animationType="fade">
@@ -326,7 +328,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1, backgroundColor: Colors.background,
-    paddingTop: 60, paddingHorizontal: 24,
   },
   lockScreen: {
     flex: 1, backgroundColor: Colors.background,

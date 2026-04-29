@@ -273,11 +273,14 @@ export default function TrackScreen() {
               {selected.garage ? (
                 <Text style={styles.infoGarage}>{selected.garage}</Text>
               ) : null}
-              {selected.routeTag ? (
-                <Text style={styles.infoRoute}>Route {selected.routeTag}</Text>
-              ) : null}
               <Text style={styles.infoSpeed}>
-                {Math.round(selected.speedKmH)} km/h
+                {(() => {
+                  const h = selected.heading ?? 0;
+                  if (h >= 315 || h < 45) return 'Heading North';
+                  if (h >= 45 && h < 135) return 'Heading East';
+                  if (h >= 135 && h < 225) return 'Heading South';
+                  return 'Heading West';
+                })()}
               </Text>
               <Text style={[
                 styles.infoFreshness,

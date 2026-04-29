@@ -22,6 +22,7 @@ import {
   where,
   updateDoc,
   doc,
+  getDoc,
   getDocs,
   Timestamp,
 } from 'firebase/firestore';
@@ -34,6 +35,7 @@ import {
   getApprovedOperators,
   ApprovedOperator,
 } from '../../services/stewardAppointment';
+import { sendApprovedNotification } from '../../services/vehicleBroadcast';
 
 interface PendingUser {
   badgeNumber: string;
@@ -67,6 +69,9 @@ export default function ApprovalsScreen() {
   const toggleNotif = (val: boolean) => {
     setNotifEnabled(val);
     SecureStore.setItemAsync('approvalNotifications', String(val));
+    if (profile?.badgeNumber) {
+      updateDoc(doc(db, 'users', profile.badgeNumber), { notificationsEnabled: val });
+    }
   };
 
   // Manage users state
@@ -109,6 +114,11 @@ export default function ApprovalsScreen() {
         status: approve ? 'approved' : 'denied',
         reviewedAt: Timestamp.now(),
       });
+      if (approve) {
+        const userSnap = await getDoc(doc(db, 'users', badgeNumber));
+        const token = userSnap.data()?.expoPushToken;
+        if (token) sendApprovedNotification(token).catch(() => {});
+      }
     } catch {
       Alert.alert('Error', 'Could not process this request. Please try again.');
     } finally {
@@ -334,7 +344,12 @@ export default function ApprovalsScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Manage Users</Text>
+              <View>
+                <Text style={styles.modalTitle}>Manage Users</Text>
+                {!loadingUsers && (
+                  <Text style={styles.userCount}>{allUsers.length} operator{allUsers.length !== 1 ? 's' : ''}</Text>
+                )}
+              </View>
               <TouchableOpacity onPress={() => setShowManage(false)}>
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
@@ -499,6 +514,7 @@ const styles = StyleSheet.create({
   },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle:  { color: Colors.white, fontSize: 18, fontWeight: '800' },
+  userCount:   { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
   modalClose:  { color: Colors.textSecondary, fontSize: 20, paddingHorizontal: 4 },
   modalLoading: { alignItems: 'center', gap: 10, paddingVertical: 20 },
   noOperatorsText: { color: Colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', padding: 16 },

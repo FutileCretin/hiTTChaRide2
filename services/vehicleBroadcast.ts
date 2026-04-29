@@ -5,6 +5,7 @@ import {
   doc,
   setDoc,
   deleteDoc,
+  updateDoc,
   collection,
   onSnapshot,
   serverTimestamp,
@@ -48,6 +49,46 @@ export async function getExpoPushToken(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// Save this device's push token to the user's Firestore profile
+export async function savePushToken(badgeNumber: string, token: string): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'users', badgeNumber), { expoPushToken: token });
+  } catch { /* ignore — user doc may not exist yet */ }
+}
+
+// Notify a steward that a new operator has submitted a registration request
+export async function sendRegistrationNotification(
+  stewardToken: string,
+  operatorName: string,
+): Promise<void> {
+  await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to:    stewardToken,
+      title: '📋 New registration request',
+      body:  `${operatorName} is waiting for your approval.`,
+      sound: 'default',
+      priority: 'high',
+    }),
+  });
+}
+
+// Notify an operator that their account has been approved
+export async function sendApprovedNotification(token: string): Promise<void> {
+  await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to:    token,
+      title: "✅ You've been approved!",
+      body:  'Your hiTTChaRide account is approved. You can now use the app.',
+      sound: 'default',
+      priority: 'high',
+    }),
+  });
 }
 
 // Send a ding notification to a broadcasting driver

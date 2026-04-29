@@ -10,9 +10,13 @@ import {
   updateDoc,
   serverTimestamp,
   Timestamp,
+  collection,
+  query,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { AvatarConfig } from './vehicleBroadcast';
+import { AvatarConfig, sendRegistrationNotification } from './vehicleBroadcast';
 
 const BADGE_KEY = 'hittcharide_badge';
 const DEVICE_ID_KEY = 'hittcharide_device_id';
@@ -134,6 +138,22 @@ export async function registerBadge(
   } as UserProfile & { firstLogin: boolean });
 
   await SecureStore.setItemAsync(BADGE_KEY, badgeNumber);
+
+  // Notify stewards about new pending registration
+  if (!isSteward && !isGodAccount) {
+    try {
+      const stewardsSnap = await getDocs(
+        query(collection(db, 'users'), where('isShopSteward', '==', true))
+      );
+      await Promise.all(
+        stewardsSnap.docs
+          .map(d => d.data())
+          .filter(s => s.expoPushToken && s.notificationsEnabled !== false)
+          .map(s => sendRegistrationNotification(s.expoPushToken, name))
+      );
+    } catch { /* notification failure should not block registration */ }
+  }
+
   return isSteward ? 'steward_registered' : 'registered';
 }
 

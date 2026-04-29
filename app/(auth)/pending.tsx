@@ -1,13 +1,12 @@
 // Waiting for shop steward approval screen
 
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
-import { getStoredBadge } from '../../services/auth';
+import { getStoredBadge, isGodAccountBadge } from '../../services/auth';
 import { Colors } from '../../constants/colors';
-import { Avatar } from '../../components/Avatar';
 
 export default function PendingScreen() {
   const [status, setStatus] = useState<string>('pending');
@@ -16,7 +15,7 @@ export default function PendingScreen() {
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
 
-    getStoredBadge().then((b) => {
+    getStoredBadge().then(async (b) => {
       if (!b) {
         router.replace('/(auth)/register');
         return;
@@ -24,7 +23,8 @@ export default function PendingScreen() {
       setBadge(b);
 
       // God account self-heal — auto-approve if somehow stuck on pending
-      if (b === '82821') {
+      const isGod = await isGodAccountBadge(b);
+      if (isGod) {
         updateDoc(doc(db, 'users', b), { status: 'approved' });
         return;
       }
@@ -62,7 +62,11 @@ export default function PendingScreen() {
 
   return (
     <View style={styles.container}>
-      <Avatar config={{ style: 'conductor', skinTone: Colors.skinTones.lightBrown }} size={90} />
+      <Image
+        source={require('../../assets/images/icon-transparent.png')}
+        style={{ width: 90, height: 90 }}
+        resizeMode="contain"
+      />
       <Text style={styles.title}>Awaiting Approval</Text>
       <Text style={styles.body}>
         Badge #{badge ? badge : '—'} has been submitted.{'\n\n'}
